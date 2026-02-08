@@ -7,8 +7,6 @@ services:
     buildCommand: npm install && npm run build
     startCommand: npm run start
     autoDeploy: true
-    domains:
-      - api-staging.wordchad.com
     envVars:
       - key: NODE_ENV
         value: production
@@ -33,8 +31,6 @@ services:
     buildCommand: npm install && npm run build
     startCommand: npm run start
     autoDeploy: true
-    domains:
-      - api.wordchad.com
     envVars:
       - key: NODE_ENV
         value: production
@@ -59,8 +55,6 @@ services:
     buildCommand: npm install && npm run build
     startCommand: npm run start
     autoDeploy: true
-    domains:
-      - admin-staging.wordchad.com
     envVars:
       - key: NODE_ENV
         value: production
@@ -75,8 +69,6 @@ services:
     buildCommand: npm install && npm run build
     startCommand: npm run start
     autoDeploy: true
-    domains:
-      - admin.wordchad.com
     envVars:
       - key: NODE_ENV
         value: production
