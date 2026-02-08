@@ -397,7 +397,9 @@ export class VendorsService {
       return status && status !== 'REJECTED' && status !== 'RESUBMISSION_REQUIRED';
     });
 
-    const filtered = missing.filter((type) => !FINANCE_ONE_OF_DOCS.includes(type));
+    const filtered: string[] = missing.filter(
+      (type) => !FINANCE_ONE_OF_DOCS.includes(type),
+    );
     if (!hasFinanceOneOf) {
       filtered.push('cancelled_cheque_or_bank_passbook');
     }
@@ -419,7 +421,9 @@ export class VendorsService {
     const missing = required.filter((type) => statusMap.get(type) !== 'APPROVED');
     const hasFinanceOneOf = FINANCE_ONE_OF_DOCS.some((type) => statusMap.get(type) === 'APPROVED');
 
-    const filtered = missing.filter((type) => !FINANCE_ONE_OF_DOCS.includes(type));
+    const filtered: string[] = missing.filter(
+      (type) => !FINANCE_ONE_OF_DOCS.includes(type),
+    );
     if (!hasFinanceOneOf) {
       filtered.push('cancelled_cheque_or_bank_passbook');
     }
