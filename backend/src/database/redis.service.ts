@@ -1,5 +1,5 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
-import Redis from 'ioredis';
+import Redis, { RedisOptions } from 'ioredis';
 
 @Injectable()
 export class RedisService implements OnModuleDestroy {
@@ -12,7 +12,17 @@ export class RedisService implements OnModuleDestroy {
       if (!url) {
         throw new Error('REDIS_URL is not set');
       }
-      this.client = new Redis(url);
+      const isTls = url.startsWith('rediss://');
+      const options: RedisOptions = {
+        enableReadyCheck: false,
+        maxRetriesPerRequest: null,
+      };
+      if (isTls) {
+        const hostname = new URL(url).hostname;
+        options.tls = { servername: hostname };
+      }
+
+      this.client = new Redis(url, options);
       this.client.on('error', (err) => {
         this.logger.error(`Redis error: ${err.message}`);
       });
