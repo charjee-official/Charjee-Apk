@@ -22,6 +22,148 @@ CREATE TABLE IF NOT EXISTS vendors (
   created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE vendors ADD COLUMN IF NOT EXISTS phone VARCHAR(32);
+ALTER TABLE vendors ADD COLUMN IF NOT EXISTS email TEXT;
+ALTER TABLE vendors ADD COLUMN IF NOT EXISTS vendor_type VARCHAR(16);
+ALTER TABLE vendors ADD COLUMN IF NOT EXISTS full_name TEXT;
+ALTER TABLE vendors ADD COLUMN IF NOT EXISTS business_name TEXT;
+ALTER TABLE vendors ADD COLUMN IF NOT EXISTS address_line TEXT;
+ALTER TABLE vendors ADD COLUMN IF NOT EXISTS city TEXT;
+ALTER TABLE vendors ADD COLUMN IF NOT EXISTS state TEXT;
+ALTER TABLE vendors ADD COLUMN IF NOT EXISTS country TEXT;
+ALTER TABLE vendors ADD COLUMN IF NOT EXISTS pincode TEXT;
+ALTER TABLE vendors ADD COLUMN IF NOT EXISTS status_reason TEXT;
+ALTER TABLE vendors ADD COLUMN IF NOT EXISTS registration_ts TIMESTAMP NOT NULL DEFAULT NOW();
+ALTER TABLE vendors ADD COLUMN IF NOT EXISTS status_updated_at TIMESTAMP NOT NULL DEFAULT NOW();
+
+CREATE TABLE IF NOT EXISTS vendor_documents (
+  id UUID PRIMARY KEY,
+  vendor_id UUID REFERENCES vendors(id) ON DELETE CASCADE,
+  document_category VARCHAR(32) NOT NULL,
+  document_type VARCHAR(64) NOT NULL,
+  file_url TEXT NOT NULL,
+  storage_path TEXT NOT NULL,
+  verification_status VARCHAR(32) NOT NULL DEFAULT 'UPLOADED',
+  verified_by UUID,
+  verified_at TIMESTAMP,
+  expiry_date TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS vendor_documents_vendor_id_idx ON vendor_documents(vendor_id);
+CREATE INDEX IF NOT EXISTS vendor_documents_status_idx ON vendor_documents(verification_status);
+CREATE UNIQUE INDEX IF NOT EXISTS vendor_documents_vendor_id_type_idx ON vendor_documents(vendor_id, document_type);
+
+CREATE TABLE IF NOT EXISTS vendor_status_history (
+  id UUID PRIMARY KEY,
+  vendor_id UUID REFERENCES vendors(id) ON DELETE CASCADE,
+  status VARCHAR(32) NOT NULL,
+  reason TEXT,
+  actor_role VARCHAR(16) NOT NULL,
+  actor_id UUID,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS vendor_refresh_tokens (
+  id UUID PRIMARY KEY,
+  vendor_id UUID REFERENCES vendors(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL,
+  expires_at TIMESTAMP NOT NULL,
+  revoked_at TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS vendor_refresh_tokens_vendor_id_idx ON vendor_refresh_tokens(vendor_id);
+
+CREATE TABLE IF NOT EXISTS vendor_audit_logs (
+  id UUID PRIMARY KEY,
+  vendor_id UUID REFERENCES vendors(id) ON DELETE CASCADE,
+  action TEXT NOT NULL,
+  actor_role VARCHAR(16) NOT NULL,
+  actor_id UUID,
+  metadata JSONB,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS vendor_notifications (
+  id UUID PRIMARY KEY,
+  vendor_id UUID REFERENCES vendors(id) ON DELETE CASCADE,
+  channel VARCHAR(16) NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'UNREAD',
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS vendor_notifications_vendor_id_idx ON vendor_notifications(vendor_id);
+
+CREATE TABLE IF NOT EXISTS vendor_settlements (
+  id UUID PRIMARY KEY,
+  vendor_id UUID REFERENCES vendors(id) ON DELETE CASCADE,
+  amount NUMERIC(12,2) NOT NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'PENDING',
+  period_start TIMESTAMP,
+  period_end TIMESTAMP,
+  payout_reference TEXT,
+  paid_at TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS vendor_settlements_vendor_id_idx ON vendor_settlements(vendor_id);
+
+CREATE TABLE IF NOT EXISTS vendor_device_requests (
+  id UUID PRIMARY KEY,
+  vendor_id UUID REFERENCES vendors(id) ON DELETE CASCADE,
+  device_id TEXT,
+  station_id UUID,
+  location TEXT,
+  reason TEXT,
+  status VARCHAR(16) NOT NULL DEFAULT 'OPEN',
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS vendor_device_requests_vendor_id_idx ON vendor_device_requests(vendor_id);
+
+CREATE TABLE IF NOT EXISTS vendor_user_device_assignments (
+  id UUID PRIMARY KEY,
+  vendor_id UUID REFERENCES vendors(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  device_id TEXT REFERENCES devices(id) ON DELETE CASCADE,
+  status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE',
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS vendor_user_device_assignments_unique_idx
+  ON vendor_user_device_assignments(vendor_id, user_id, device_id);
+
+CREATE INDEX IF NOT EXISTS vendor_user_device_assignments_vendor_idx
+  ON vendor_user_device_assignments(vendor_id);
+
+CREATE TABLE IF NOT EXISTS support_tickets (
+  id UUID PRIMARY KEY,
+  vendor_id UUID REFERENCES vendors(id) ON DELETE CASCADE,
+  subject TEXT NOT NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'OPEN',
+  priority VARCHAR(16) NOT NULL DEFAULT 'NORMAL',
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS support_tickets_vendor_id_idx ON support_tickets(vendor_id);
+
+CREATE TABLE IF NOT EXISTS support_ticket_messages (
+  id UUID PRIMARY KEY,
+  ticket_id UUID REFERENCES support_tickets(id) ON DELETE CASCADE,
+  vendor_id UUID REFERENCES vendors(id) ON DELETE CASCADE,
+  sender_role VARCHAR(16) NOT NULL,
+  message TEXT NOT NULL,
+  attachments JSONB,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS support_ticket_messages_ticket_idx ON support_ticket_messages(ticket_id);
+
 CREATE TABLE IF NOT EXISTS stations (
   id UUID PRIMARY KEY,
   vendor_id UUID REFERENCES vendors(id),

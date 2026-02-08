@@ -1,0 +1,84 @@
+services:
+  - type: web
+    name: ev-backend-staging
+    env: node
+    rootDir: backend
+    plan: standard
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    autoDeploy: true
+    domains:
+      - api-staging.wordchad.com
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: CORS_ORIGINS
+        value: https://admin-staging.wordchad.com
+      - key: JWT_SECRET
+        sync: false
+      - key: AUTH_INTERNAL_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: VENDOR_USER_CREATE_ENABLED
+        value: "true"
+      - key: VENDOR_REFRESH_TTL_DAYS
+        value: "30"
+
+  - type: web
+    name: ev-backend-prod
+    env: node
+    rootDir: backend
+    plan: standard
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    autoDeploy: true
+    domains:
+      - api.wordchad.com
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: CORS_ORIGINS
+        value: https://admin.wordchad.com
+      - key: JWT_SECRET
+        sync: false
+      - key: AUTH_INTERNAL_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: VENDOR_USER_CREATE_ENABLED
+        value: "true"
+      - key: VENDOR_REFRESH_TTL_DAYS
+        value: "30"
+
+  - type: web
+    name: ev-admin-staging
+    env: node
+    rootDir: admin-panel
+    plan: standard
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    autoDeploy: true
+    domains:
+      - admin-staging.wordchad.com
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_API_BASE_URL
+        value: https://api-staging.wordchad.com
+
+  - type: web
+    name: ev-admin-prod
+    env: node
+    rootDir: admin-panel
+    plan: standard
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    autoDeploy: true
+    domains:
+      - admin.wordchad.com
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_API_BASE_URL
+        value: https://api.wordchad.com

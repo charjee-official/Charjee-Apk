@@ -62,6 +62,10 @@ export class AuthService {
     return this.signToken({ sub: userId, role: 'user' });
   }
 
+  async verifyOtpOnly(phone: string, otp: string) {
+    return this.otpService.verifyOtp(phone, otp);
+  }
+
   async registerPassword(username: string, password: string, role: UserRole, subjectId: string) {
     const hash = await bcrypt.hash(password, 10);
     await this.authRepository.createCredential(username, hash, role, subjectId);
@@ -69,22 +73,34 @@ export class AuthService {
   }
 
   async loginPassword(username: string, password: string) {
-    const credential = await this.authRepository.getCredentialByUsername(username);
+    const credential = await this.verifyPassword(username, password);
     if (!credential) {
       throw new UnauthorizedException();
     }
 
-    const matches = await bcrypt.compare(password, credential.password_hash);
-    if (!matches) {
-      throw new UnauthorizedException();
-    }
-
     const payload: JwtPayload = {
-      sub: credential.subject_id,
+      sub: credential.subjectId,
       role: credential.role,
-      vendorId: credential.role === 'vendor' ? credential.subject_id : undefined,
+      vendorId: credential.role === 'vendor' ? credential.subjectId : undefined,
     };
 
     return this.signToken(payload);
+  }
+
+  async verifyPassword(username: string, password: string) {
+    const credential = await this.authRepository.getCredentialByUsername(username);
+    if (!credential) {
+      return null;
+    }
+
+    const matches = await bcrypt.compare(password, credential.password_hash);
+    if (!matches) {
+      return null;
+    }
+
+    return {
+      role: credential.role,
+      subjectId: credential.subject_id,
+    };
   }
 }
