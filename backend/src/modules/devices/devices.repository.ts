@@ -71,7 +71,7 @@ export class DevicesRepository {
       ORDER BY d.created_at DESC
       `,
     );
-    return result.rows.map((row) => ({
+    return result.rows.map((row: any) => ({
       id: row.id,
       vendorId: row.vendor_id,
       stationId: row.station_id,
@@ -145,7 +145,7 @@ export class DevicesRepository {
       `,
       [vendorId],
     );
-    return result.rows.map((row) => ({
+    return result.rows.map((row: any) => ({
       id: row.id,
       vendorId: row.vendor_id,
       stationId: row.station_id,
@@ -180,7 +180,7 @@ export class DevicesRepository {
       `,
       [stationId],
     );
-    return result.rows.map((row) => ({
+    return result.rows.map((row: any) => ({
       id: row.id,
       vendorId: row.vendor_id,
       stationId: row.station_id,

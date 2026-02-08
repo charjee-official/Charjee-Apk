@@ -23,7 +23,7 @@ export class WalletRepository {
       ORDER BY created_at DESC
       `,
     );
-    return result.rows.map((row) => ({
+    return result.rows.map((row: any) => ({
       id: String(row.id),
       userId: row.user_id,
       sessionId: row.session_id ?? null,

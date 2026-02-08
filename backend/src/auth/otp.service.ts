@@ -1,4 +1,4 @@
-import { Injectable, TooManyRequestsException } from '@nestjs/common';
+import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { RedisService } from '../database/redis.service';
 import { SmsService } from './sms.service';
 
@@ -54,7 +54,7 @@ export class OtpService {
       await client.expire(key, window);
     }
     if (count > max) {
-      throw new TooManyRequestsException('OTP rate limit exceeded');
+      throw new HttpException('OTP rate limit exceeded', HttpStatus.TOO_MANY_REQUESTS);
     }
   }
 }

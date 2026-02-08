@@ -30,7 +30,11 @@ export class AuthController {
       throw new UnauthorizedException();
     }
 
-    return this.authService.signToken(input);
+    return this.authService.signToken({
+      sub: input.userId,
+      role: input.role,
+      vendorId: input.vendorId,
+    });
   }
 
   @Post('otp/request')

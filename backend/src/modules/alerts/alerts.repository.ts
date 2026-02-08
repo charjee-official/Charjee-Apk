@@ -25,7 +25,7 @@ export class AlertsRepository {
       ORDER BY created_at DESC
       `,
     );
-    return result.rows.map((row) => ({
+    return result.rows.map((row: any) => ({
       id: row.id,
       deviceId: row.device_id,
       type: row.type,

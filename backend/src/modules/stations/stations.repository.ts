@@ -61,7 +61,7 @@ export class StationsRepository {
       ORDER BY s.created_at DESC
       `,
     );
-    return result.rows.map((row) => ({
+    return result.rows.map((row: any) => ({
       id: row.id,
       vendorId: row.vendor_id,
       name: row.name,
@@ -121,7 +121,7 @@ export class StationsRepository {
       `,
       [vendorId],
     );
-    return result.rows.map((row) => ({
+    return result.rows.map((row: any) => ({
       id: row.id,
       vendorId: row.vendor_id,
       name: row.name,

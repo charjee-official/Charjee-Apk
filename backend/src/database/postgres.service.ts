@@ -13,7 +13,7 @@ export class PostgresService implements OnModuleDestroy {
         throw new Error('DATABASE_URL is not set');
       }
       this.pool = new Pool({ connectionString });
-      this.pool.on('error', (err) => {
+      this.pool.on('error', (err: Error) => {
         this.logger.error(`Postgres pool error: ${err.message}`);
       });
     }

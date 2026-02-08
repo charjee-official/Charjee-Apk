@@ -44,7 +44,7 @@ export class BookingsRepository {
        FROM bookings WHERE user_id=$1 ORDER BY start_at DESC`,
       [userId],
     );
-    return result.rows.map((row) => ({
+    return result.rows.map((row: any) => ({
       id: row.id,
       userId: row.user_id,
       deviceId: row.device_id,
@@ -60,7 +60,7 @@ export class BookingsRepository {
       `SELECT id, user_id, device_id, start_at, end_at, status
        FROM bookings ORDER BY start_at DESC`,
     );
-    return result.rows.map((row) => ({
+    return result.rows.map((row: any) => ({
       id: row.id,
       userId: row.user_id,
       deviceId: row.device_id,

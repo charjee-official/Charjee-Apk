@@ -143,12 +143,12 @@ export class SessionsService {
 
   async listActiveSessions() {
     const rows = await this.sessionsRepository.listActiveSessions();
-    return rows.map((row) => this.toAdminSession(row));
+    return rows.map((row: any) => this.toAdminSession(row));
   }
 
   async listHistorySessions() {
     const rows = await this.sessionsRepository.listHistorySessions();
-    return rows.map((row) => this.toAdminSession(row));
+    return rows.map((row: any) => this.toAdminSession(row));
   }
 
   async getAdminSession(sessionId: string) {
@@ -170,7 +170,7 @@ export class SessionsService {
 
   async listFinanceSessions() {
     const rows = await this.sessionsRepository.listFinanceSessions();
-    return rows.map((row) => ({
+    return rows.map((row: any) => ({
       id: row.id,
       deviceId: null,
       user: null,
@@ -270,7 +270,7 @@ export class SessionsService {
   private getCachedSession(deviceId: string): Promise<string | undefined> {
     try {
       const client = this.redisService.getClient();
-      return client.get(this.activeDeviceKey(deviceId)) ?? Promise.resolve(undefined);
+      return client.get(this.activeDeviceKey(deviceId)).then((value) => value ?? undefined);
     } catch (error) {
       this.logger.warn('Redis not available for session lookup');
       return Promise.resolve(undefined);
