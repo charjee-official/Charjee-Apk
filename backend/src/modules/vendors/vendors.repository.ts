@@ -30,11 +30,11 @@ export class VendorsRepository {
       ORDER BY v.created_at DESC
       `,
     );
-    return result.rows.map((row: Record<string, unknown>) => ({
-      id: row.id,
-      name: row.name,
-      status: row.status,
-      kyc: row.kyc_status,
+    return result.rows.map((row: any) => ({
+      id: String(row.id),
+      name: String(row.name),
+      status: String(row.status),
+      kyc: String(row.kyc_status),
       revenue: Number(row.revenue ?? 0),
     }));
   }
@@ -56,16 +56,16 @@ export class VendorsRepository {
       `,
       [id],
     );
-    if (result.rowCount === 0) {
+    if ((result.rowCount ?? 0) === 0) {
       return null;
     }
-    const row = result.rows[0] as Record<string, unknown> | undefined;
+    const row = result.rows[0] as any;
     return {
-      id: row?.id as string,
-      name: row?.name as string,
-      status: row?.status as string,
-      kyc: row?.kyc_status as string,
-      revenue: Number((row as Record<string, unknown>)?.revenue ?? 0),
+      id: String(row?.id),
+      name: String(row?.name),
+      status: String(row?.status),
+      kyc: String(row?.kyc_status),
+      revenue: Number(row?.revenue ?? 0),
     };
   }
 

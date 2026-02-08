@@ -234,7 +234,7 @@ export class SessionsRepository {
       `SELECT 1 FROM wallet_ledger WHERE session_id=$1 LIMIT 1`,
       [sessionId],
     );
-    return result.rowCount > 0;
+    return (result.rowCount ?? 0) > 0;
   }
 
   async hasVendorLedger(sessionId: string) {
@@ -243,7 +243,7 @@ export class SessionsRepository {
       `SELECT 1 FROM vendor_ledger WHERE session_id=$1 LIMIT 1`,
       [sessionId],
     );
-    return result.rowCount > 0;
+    return (result.rowCount ?? 0) > 0;
   }
 
   async insertWalletLedger(userId: string, sessionId: string, amount: number, type: string) {

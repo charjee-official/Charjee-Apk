@@ -15,7 +15,7 @@ export class AuthRepository {
       `SELECT id FROM users WHERE phone=$1 LIMIT 1`,
       [phone],
     );
-    if (existing.rowCount > 0) {
+    if ((existing.rowCount ?? 0) > 0) {
       return String(existing.rows[0].id);
     }
 

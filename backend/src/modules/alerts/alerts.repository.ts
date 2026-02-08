@@ -49,7 +49,7 @@ export class AlertsRepository {
       `SELECT 1 FROM alerts WHERE device_id=$1 AND type=$2 AND status='Open' LIMIT 1`,
       [deviceId, type],
     );
-    return result.rowCount > 0;
+    return (result.rowCount ?? 0) > 0;
   }
 
   async createAlert(deviceId: string, type: string) {

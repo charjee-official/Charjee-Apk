@@ -35,11 +35,11 @@ export class UsersRepository {
     const result = await pool.query(
       `SELECT id, phone, name, created_at FROM users ORDER BY created_at DESC`,
     );
-    return result.rows.map((row: Record<string, unknown>) => ({
-      id: row.id,
-      phone: row.phone,
+    return result.rows.map((row: any) => ({
+      id: String(row.id),
+      phone: String(row.phone),
       name: row.name ?? null,
-      createdAt: row.created_at,
+      createdAt: row.created_at as Date,
     }));
   }
 
@@ -49,15 +49,15 @@ export class UsersRepository {
       `SELECT id, phone, name, created_at FROM users WHERE phone=$1 LIMIT 1`,
       [phone],
     );
-    if (result.rowCount === 0) {
+    if ((result.rowCount ?? 0) === 0) {
       return null;
     }
-    const row = result.rows[0];
+    const row = result.rows[0] as any;
     return {
-      id: row.id,
-      phone: row.phone,
+      id: String(row.id),
+      phone: String(row.phone),
       name: row.name ?? null,
-      createdAt: row.created_at,
+      createdAt: row.created_at as Date,
     };
   }
 }

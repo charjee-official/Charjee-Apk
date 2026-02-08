@@ -83,7 +83,7 @@ export class BookingsRepository {
       `,
       [deviceId, startAt, endAt],
     );
-    return result.rowCount > 0;
+    return (result.rowCount ?? 0) > 0;
   }
 
   async getActiveBooking(
@@ -135,6 +135,6 @@ export class BookingsRepository {
       `,
       [before],
     );
-    return result.rowCount;
+    return result.rowCount ?? 0;
   }
 }
