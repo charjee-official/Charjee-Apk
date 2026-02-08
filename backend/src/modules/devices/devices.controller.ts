@@ -20,10 +20,38 @@ export class DevicesController {
     );
   }
 
+  @Get()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  listAll() {
+    return this.devicesService.listAll();
+  }
+
   @Get('vendor/:vendorId')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin', 'vendor')
   listByVendor(@Param('vendorId') vendorId: string) {
     return this.devicesService.listByVendor(vendorId);
+  }
+
+  @Get(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  getById(@Param('id') id: string) {
+    return this.devicesService.getById(id);
+  }
+
+  @Post(':id/enable')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  enable(@Param('id') id: string) {
+    return this.devicesService.enableDevice(id);
+  }
+
+  @Post(':id/disable')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  disable(@Param('id') id: string) {
+    return this.devicesService.disableDevice(id);
   }
 }

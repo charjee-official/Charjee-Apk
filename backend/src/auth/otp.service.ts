@@ -12,7 +12,10 @@ export class OtpService {
   async issueOtp(phone: string) {
     await this.enforceRateLimit(phone);
     const otp = this.generateOtp();
-    const ttlSeconds = Number(process.env.OTP_TTL_SECONDS ?? 300);
+    const expiryMinutes = Number(process.env.OTP_EXPIRY_MINUTES ?? 5);
+    const fallbackTtl =
+      Number.isFinite(expiryMinutes) ? expiryMinutes * 60 : 300;
+    const ttlSeconds = Number(process.env.OTP_TTL_SECONDS ?? fallbackTtl);
     const ttl = Number.isFinite(ttlSeconds) ? ttlSeconds : 300;
     const client = this.redisService.getClient();
     await client.set(this.key(phone), otp, 'EX', ttl);

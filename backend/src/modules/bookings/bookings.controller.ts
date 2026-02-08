@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { JwtPayload } from '../../auth/auth.service';
 import { Roles } from '../../auth/roles.decorator';
 import { RolesGuard } from '../../auth/roles.guard';
+import { parseDateTimeValue } from '../../common/date-time';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { BookingsService } from './bookings.service';
 
@@ -23,12 +24,18 @@ export class BookingsController {
       return { ok: false };
     }
 
+    const startAt = parseDateTimeValue(input.startAt);
+    const endAt = parseDateTimeValue(input.endAt);
+    if (!startAt || !endAt) {
+      throw new BadRequestException('Invalid date/time format');
+    }
+
     return await this.bookingsService.createBooking(
       randomUUID(),
       userId,
       input.deviceId,
-      new Date(input.startAt),
-      new Date(input.endAt),
+      startAt,
+      endAt,
     );
   }
 
@@ -41,6 +48,22 @@ export class BookingsController {
       return [];
     }
     return this.bookingsService.listByUser(userId);
+  }
+
+  @Get()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  listAll() {
+    return this.bookingsService.listAll().then((rows) =>
+      rows.map((row) => ({
+        id: row.id,
+        deviceId: row.deviceId,
+        user: row.userId,
+        status: row.status,
+        startAt: row.startAt,
+        endAt: row.endAt,
+      })),
+    );
   }
 
   @Post('expire')

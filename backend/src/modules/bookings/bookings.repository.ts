@@ -44,7 +44,30 @@ export class BookingsRepository {
        FROM bookings WHERE user_id=$1 ORDER BY start_at DESC`,
       [userId],
     );
-    return result.rows as BookingRecord[];
+    return result.rows.map((row) => ({
+      id: row.id,
+      userId: row.user_id,
+      deviceId: row.device_id,
+      startAt: row.start_at,
+      endAt: row.end_at,
+      status: row.status,
+    })) as BookingRecord[];
+  }
+
+  async listAll() {
+    const pool = this.postgres.getPool();
+    const result = await pool.query(
+      `SELECT id, user_id, device_id, start_at, end_at, status
+       FROM bookings ORDER BY start_at DESC`,
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      userId: row.user_id,
+      deviceId: row.device_id,
+      startAt: row.start_at,
+      endAt: row.end_at,
+      status: row.status,
+    })) as BookingRecord[];
   }
 
   async hasConflict(deviceId: string, startAt: Date, endAt: Date) {

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { RealtimeGateway } from './realtime.gateway';
+import { serializeDateTimes } from '../common/date-time';
 import { EnergyDataPayload, SessionRecord } from '../modules/sessions/session.types';
 
 @Injectable()
@@ -8,19 +9,19 @@ export class RealtimeService {
 
   emitTelemetry(session: SessionRecord, data: EnergyDataPayload) {
     const payload = { sessionId: session.sessionId, deviceId: session.deviceId, data };
-    this.emitToSessionRooms(session, 'device.telemetry', payload);
+    this.emitToSessionRooms(session, 'device.telemetry', serializeDateTimes(payload));
   }
 
   emitSessionStarted(session: SessionRecord) {
-    this.emitToSessionRooms(session, 'session.started', session);
+    this.emitToSessionRooms(session, 'session.started', serializeDateTimes(session));
   }
 
   emitSessionUpdated(session: SessionRecord) {
-    this.emitToSessionRooms(session, 'session.updated', session);
+    this.emitToSessionRooms(session, 'session.updated', serializeDateTimes(session));
   }
 
   emitSessionStopped(session: SessionRecord) {
-    this.emitToSessionRooms(session, 'session.stopped', session);
+    this.emitToSessionRooms(session, 'session.stopped', serializeDateTimes(session));
   }
 
   private emitToSessionRooms(

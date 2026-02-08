@@ -36,6 +36,8 @@ export interface SessionRecord extends SessionInit {
   status: SessionStatus;
   startedAt?: Date;
   endedAt?: Date;
+  closeReason?: string | null;
+  illegal?: boolean | null;
   lastTelemetryAt?: Date;
   lastTpwh?: number;
   lastEnergyKwh?: number;

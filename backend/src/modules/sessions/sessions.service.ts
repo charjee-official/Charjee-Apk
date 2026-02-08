@@ -4,6 +4,8 @@ import { RedisService } from '../../database/redis.service';
 import { BillingService } from './billing.service';
 import { SessionsRepository } from './sessions.repository';
 import { BookingsService } from '../bookings/bookings.service';
+import { DevicesService } from '../devices/devices.service';
+import { AlertsService } from '../alerts/alerts.service';
 import {
   EnergyDataPayload,
   SessionInit,
@@ -23,6 +25,8 @@ export class SessionsService {
     private readonly redisService: RedisService,
     private readonly sessionsRepository: SessionsRepository,
     private readonly bookingsService: BookingsService,
+    private readonly devicesService: DevicesService,
+    private readonly alertsService: AlertsService,
   ) {}
 
   async registerSession(init: SessionInit) {
@@ -33,6 +37,8 @@ export class SessionsService {
       amount: 0,
       platformAmount: 0,
       vendorAmount: 0,
+      closeReason: null,
+      illegal: false,
     };
 
     this.sessionsById.set(init.sessionId, record);
@@ -57,6 +63,9 @@ export class SessionsService {
       return;
     }
 
+    await this.devicesService.markOnline(data.id);
+    await this.raiseAlerts(data);
+
     session.lastTelemetryAt = new Date();
     await this.sessionsRepository.insertTelemetry(sessionId, data);
 
@@ -73,7 +82,7 @@ export class SessionsService {
 
     if (data.rpt === 'f' || data.st === 0) {
       this.billingService.applyTelemetry(session, data);
-      await this.stopSession(session, data.rpt);
+      await this.stopSession(session, data.rpt, data);
       await this.sessionsRepository.updateSession(session);
       this.realtimeService.emitTelemetry(session, data);
     }
@@ -100,16 +109,23 @@ export class SessionsService {
     this.realtimeService.emitSessionStarted(session);
   }
 
-  private async stopSession(session: SessionRecord, reason: string) {
+  private async stopSession(
+    session: SessionRecord,
+    reason: string,
+    data?: EnergyDataPayload,
+  ) {
     if (session.status === 'STOPPED') {
       return;
     }
 
     session.status = 'STOPPED';
     session.endedAt = new Date();
+    session.illegal = Boolean(data?.ill && data.ill > 0);
+    session.closeReason = this.resolveCloseReason(reason, data);
     this.activeByDevice.delete(session.deviceId);
     await this.clearCachedSession(session.deviceId);
     await this.sessionsRepository.updateSession(session);
+    await this.ensureLedgers(session);
     await this.bookingsService.completeBooking(session.bookingId);
     this.logger.log(
       `Session stopped sessionId=${session.sessionId} reason=${reason}`,
@@ -123,6 +139,132 @@ export class SessionsService {
 
   getSessionStatus(sessionId: string): SessionStatus | undefined {
     return this.sessionsById.get(sessionId)?.status;
+  }
+
+  async listActiveSessions() {
+    const rows = await this.sessionsRepository.listActiveSessions();
+    return rows.map((row) => this.toAdminSession(row));
+  }
+
+  async listHistorySessions() {
+    const rows = await this.sessionsRepository.listHistorySessions();
+    return rows.map((row) => this.toAdminSession(row));
+  }
+
+  async getAdminSession(sessionId: string) {
+    const row = await this.sessionsRepository.getById(sessionId);
+    return row ? this.toAdminSession(row) : null;
+  }
+
+  async getSessionMeta(sessionId: string) {
+    const row = await this.sessionsRepository.getById(sessionId);
+    if (!row) {
+      return null;
+    }
+    return {
+      sessionId: row.id,
+      deviceId: row.device_id,
+      status: row.status,
+    };
+  }
+
+  async listFinanceSessions() {
+    const rows = await this.sessionsRepository.listFinanceSessions();
+    return rows.map((row) => ({
+      id: row.id,
+      deviceId: null,
+      user: null,
+      status: null,
+      startTime: row.started_at ?? null,
+      startedAt: row.started_at ?? null,
+      endedAt: null,
+      energyKwh: 0,
+      cost: Number(row.amount ?? 0),
+      closeReason: null,
+      illegal: false,
+    }));
+  }
+
+  async forceStopSession(sessionId: string) {
+    await this.sessionsRepository.forceStop(sessionId);
+    const meta = await this.getSessionMeta(sessionId);
+    if (meta?.deviceId) {
+      this.activeByDevice.delete(meta.deviceId);
+      await this.clearCachedSession(meta.deviceId);
+    }
+    const existing = this.sessionsById.get(sessionId);
+    if (existing) {
+      existing.status = 'STOPPED';
+      existing.endedAt = new Date();
+      existing.closeReason = 'Force stop';
+    }
+    return this.getAdminSession(sessionId);
+  }
+
+  private toAdminSession(row: any) {
+    const startedAt = row.started_at ?? null;
+    const endedAt = row.ended_at ?? null;
+    return {
+      id: row.id,
+      deviceId: row.device_id,
+      user: row.user_id,
+      status: row.status,
+      startTime: startedAt,
+      startedAt,
+      endedAt,
+      energyKwh: Number(row.energy_kwh ?? 0),
+      cost: Number(row.amount ?? 0),
+      closeReason: row.close_reason ?? (row.status === 'STOPPED' ? 'Normal' : null),
+      illegal: Boolean(row.illegal),
+    };
+  }
+
+  private async ensureLedgers(session: SessionRecord) {
+    if (session.amount <= 0) {
+      return;
+    }
+
+    const hasWallet = await this.sessionsRepository.hasWalletLedger(session.sessionId);
+    if (!hasWallet) {
+      await this.sessionsRepository.insertWalletLedger(
+        session.userId,
+        session.sessionId,
+        session.amount,
+        'Debit',
+      );
+    }
+
+    const hasVendor = await this.sessionsRepository.hasVendorLedger(session.sessionId);
+    if (!hasVendor) {
+      await this.sessionsRepository.insertVendorLedger(
+        session.vendorId,
+        session.sessionId,
+        session.vendorAmount,
+      );
+    }
+  }
+
+  private resolveCloseReason(reason: string, data?: EnergyDataPayload) {
+    if (data?.ill && data.ill > 0) {
+      return 'Illegal consumption';
+    }
+    if (reason === 'f') {
+      return 'Force stop';
+    }
+    if (data?.st === 0) {
+      return 'Device stop';
+    }
+    return 'Normal';
+  }
+
+  private async raiseAlerts(data: EnergyDataPayload) {
+    const lowVoltageThreshold = Number(process.env.LOW_VOLTAGE_THRESHOLD ?? 190);
+    if (data.ill && data.ill > 0) {
+      await this.alertsService.raiseAlert(data.id, 'Illegal consumption');
+    }
+    if (typeof data.v === 'number' && data.v > 0 && data.v < lowVoltageThreshold) {
+      await this.alertsService.raiseAlert(data.id, 'Low voltage');
+    }
   }
 
   private getCachedSession(deviceId: string): Promise<string | undefined> {

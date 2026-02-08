@@ -1,10 +1,20 @@
-import { Body, Controller, Headers, Post, UnauthorizedException } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Headers,
+  Post,
+  UnauthorizedException,
+  UseGuards,
+} from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { IssueTokenDto } from './dto/issue-token.dto';
 import { RequestOtpDto } from './dto/request-otp.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { PasswordLoginDto } from './dto/password-login.dto';
 import { PasswordRegisterDto } from './dto/password-register.dto';
+import { JwtAuthGuard } from './jwt-auth.guard';
+import { Roles } from './roles.decorator';
+import { RolesGuard } from './roles.guard';
 
 @Controller('auth')
 export class AuthController {
@@ -25,6 +35,13 @@ export class AuthController {
 
   @Post('otp/request')
   requestOtp(@Body() input: RequestOtpDto) {
+    return this.authService.requestOtp(input.phone);
+  }
+
+  @Post('otp/test')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  testOtp(@Body() input: RequestOtpDto) {
     return this.authService.requestOtp(input.phone);
   }
 

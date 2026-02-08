@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS auth_credentials (
 CREATE TABLE IF NOT EXISTS vendors (
   id UUID PRIMARY KEY,
   name TEXT NOT NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'Active',
+  kyc_status VARCHAR(16) NOT NULL DEFAULT 'Pending',
   created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
@@ -25,6 +27,7 @@ CREATE TABLE IF NOT EXISTS stations (
   vendor_id UUID REFERENCES vendors(id),
   name TEXT NOT NULL,
   address TEXT,
+  status VARCHAR(16) NOT NULL DEFAULT 'Active',
   created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
@@ -33,6 +36,26 @@ CREATE TABLE IF NOT EXISTS devices (
   vendor_id UUID REFERENCES vendors(id),
   station_id UUID,
   status VARCHAR(32) NOT NULL DEFAULT 'offline',
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+
+CREATE TABLE IF NOT EXISTS alerts (
+  id UUID PRIMARY KEY,
+  device_id TEXT REFERENCES devices(id),
+  type TEXT NOT NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'Open',
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS bookings (
+  id UUID PRIMARY KEY,
+  user_id UUID REFERENCES users(id),
+  device_id TEXT REFERENCES devices(id),
+  start_at TIMESTAMP NOT NULL,
+  end_at TIMESTAMP NOT NULL,
+  status VARCHAR(16) NOT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
@@ -52,6 +75,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   amount NUMERIC(12,2) NOT NULL DEFAULT 0,
   platform_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
   vendor_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+  close_reason TEXT,
+  illegal BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
@@ -93,12 +118,11 @@ CREATE TABLE IF NOT EXISTS vendor_ledger (
   created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS bookings (
-  id UUID PRIMARY KEY,
-  user_id UUID REFERENCES users(id),
-  device_id TEXT REFERENCES devices(id),
-  start_at TIMESTAMP NOT NULL,
-  end_at TIMESTAMP NOT NULL,
-  status VARCHAR(16) NOT NULL,
-  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+CREATE TABLE IF NOT EXISTS admin_settings (
+  id SMALLINT PRIMARY KEY DEFAULT 1,
+  platform_fee_pct NUMERIC(5,2) NOT NULL DEFAULT 20,
+  min_wallet_car NUMERIC(10,2) NOT NULL DEFAULT 700,
+  min_wallet_bike NUMERIC(10,2) NOT NULL DEFAULT 300,
+  bookings_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );

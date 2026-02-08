@@ -1,9 +1,13 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { BookingsRepository } from './bookings.repository';
+import { SettingsService } from '../settings/settings.service';
 
 @Injectable()
 export class BookingsService {
-  constructor(private readonly repository: BookingsRepository) {}
+  constructor(
+    private readonly repository: BookingsRepository,
+    private readonly settingsService: SettingsService,
+  ) {}
 
   async createBooking(
     id: string,
@@ -12,6 +16,11 @@ export class BookingsService {
     startAt: Date,
     endAt: Date,
   ) {
+    const settings = await this.settingsService.getSettings();
+    if (!settings.bookingsEnabled) {
+      throw new BadRequestException('Bookings are disabled');
+    }
+
     if (endAt <= startAt) {
       throw new BadRequestException('Invalid booking window');
     }
@@ -37,6 +46,10 @@ export class BookingsService {
 
   listByUser(userId: string) {
     return this.repository.listByUser(userId);
+  }
+
+  listAll() {
+    return this.repository.listAll();
   }
 
   async claimBooking(

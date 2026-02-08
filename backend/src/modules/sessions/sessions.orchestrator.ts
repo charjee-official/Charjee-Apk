@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import { MqttService } from '../../mqtt/mqtt.service';
 import { BookingsService } from '../bookings/bookings.service';
 import { PricingService } from '../pricing/pricing.service';
+import { SettingsService } from '../settings/settings.service';
 import { WalletService } from '../wallet/wallet.service';
 import { StartSessionDto } from './dto/start-session.dto';
 import { StopSessionDto } from './dto/stop-session.dto';
@@ -14,13 +15,16 @@ export class SessionsOrchestrator {
   constructor(
     private readonly pricingService: PricingService,
     private readonly walletService: WalletService,
+    private readonly settingsService: SettingsService,
     private readonly sessionsService: SessionsService,
     private readonly mqttService: MqttService,
     private readonly bookingsService: BookingsService,
   ) {}
 
   async startSession(input: StartSessionDto): Promise<SessionRecord> {
-    this.walletService.ensureMinimumBalance(input.userId, input.vehicleType);
+    await this.walletService.ensureMinimumBalance(input.userId, input.vehicleType);
+
+    const settings = await this.settingsService.getSettings();
 
     const booking = await this.bookingsService.claimBooking(
       input.userId,
@@ -38,7 +42,7 @@ export class SessionsOrchestrator {
     );
 
     const sessionId = randomUUID();
-    const platformFeePct = 20;
+    const platformFeePct = settings.platformFeePct;
 
     await this.sessionsService.registerSession({
       sessionId,
@@ -78,5 +82,16 @@ export class SessionsOrchestrator {
     this.mqttService.publishTurnOff(input.deviceId, timer, input.sessionId);
 
     return session;
+  }
+
+  async forceStopSession(sessionId: string) {
+    const meta = await this.sessionsService.getSessionMeta(sessionId);
+    if (!meta) {
+      throw new BadRequestException('Session not found');
+    }
+
+    const timer = '0m';
+    this.mqttService.publishTurnOff(meta.deviceId, timer, sessionId);
+    return this.sessionsService.forceStopSession(sessionId);
   }
 }
