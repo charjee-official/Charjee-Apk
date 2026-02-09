@@ -4,7 +4,7 @@ services:
     env: node
     rootDir: backend
     plan: free
-    buildCommand: npm install && npm run build
+    buildCommand: npm install --include=dev && npm run build
     startCommand: npm run start
     autoDeploy: true
     envVars:
@@ -30,7 +30,7 @@ services:
     env: node
     rootDir: backend
     plan: free
-    buildCommand: npm install && npm run build
+    buildCommand: npm install --include=dev && npm run build
     startCommand: npm run start
     autoDeploy: true
     envVars:
@@ -56,7 +56,7 @@ services:
     env: node
     rootDir: admin-panel
     plan: free
-    buildCommand: npm install && npm run build
+    buildCommand: npm install --include=dev && npm run build
     startCommand: npm run start
     autoDeploy: true
     envVars:
@@ -72,7 +72,7 @@ services:
     env: node
     rootDir: admin-panel
     plan: free
-    buildCommand: npm install && npm run build
+    buildCommand: npm install --include=dev && npm run build
     startCommand: npm run start
     autoDeploy: true
     envVars:
