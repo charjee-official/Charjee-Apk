@@ -60,6 +60,8 @@ services:
     startCommand: npm run start
     autoDeploy: true
     envVars:
+      - key: NODE_VERSION
+        value: "20"
       - key: NODE_ENV
         value: production
       - key: NEXT_PUBLIC_API_BASE_URL
@@ -74,6 +76,8 @@ services:
     startCommand: npm run start
     autoDeploy: true
     envVars:
+      - key: NODE_VERSION
+        value: "20"
       - key: NODE_ENV
         value: production
       - key: NEXT_PUBLIC_API_BASE_URL
