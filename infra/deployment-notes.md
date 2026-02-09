@@ -14,6 +14,7 @@
 
 Apply the blueprint in [render.yaml](../render.yaml), then set secrets in Render:
 - DATABASE_URL
+- REDIS_URL
 - JWT_SECRET
 - AUTH_INTERNAL_KEY
 
