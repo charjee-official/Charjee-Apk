@@ -3,7 +3,7 @@ services:
     name: ev-backend-staging
     env: node
     rootDir: backend
-    plan: starter
+    plan: free
     buildCommand: npm install && npm run build
     startCommand: npm run start
     autoDeploy: true
@@ -29,7 +29,7 @@ services:
     name: ev-backend-prod
     env: node
     rootDir: backend
-    plan: starter
+    plan: free
     buildCommand: npm install && npm run build
     startCommand: npm run start
     autoDeploy: true
@@ -55,7 +55,7 @@ services:
     name: ev-admin-staging
     env: node
     rootDir: admin-panel
-    plan: starter
+    plan: free
     buildCommand: npm install && npm run build
     startCommand: npm run start
     autoDeploy: true
@@ -69,7 +69,7 @@ services:
     name: ev-admin-prod
     env: node
     rootDir: admin-panel
-    plan: starter
+    plan: free
     buildCommand: npm install && npm run build
     startCommand: npm run start
     autoDeploy: true
