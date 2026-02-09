@@ -7,13 +7,13 @@
       "distribution": "internal",
       "channel": "staging",
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://api-staging.wordchad.com"
+        "EXPO_PUBLIC_API_BASE_URL": "https://api-staging.greenlndcraft.in"
       }
     },
     "production": {
       "channel": "production",
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://api.wordchad.com"
+        "EXPO_PUBLIC_API_BASE_URL": "https://api.greenlndcraft.in"
       }
     }
   }

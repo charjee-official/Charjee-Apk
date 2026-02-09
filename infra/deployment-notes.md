@@ -4,13 +4,13 @@
 - Backend: Render (Node web service) pointing to Supabase Postgres
 - Admin panel: Render (Next.js web service)
 - Mobile apps: Expo EAS Build + app stores
-- Domains: wordchad.com subdomains
+- Domains: greenlndcraft.in subdomains
 
 ## Render Services
-- api-staging.wordchad.com -> ev-backend-staging
-- api.wordchad.com -> ev-backend-prod
-- admin-staging.wordchad.com -> ev-admin-staging
-- admin.wordchad.com -> ev-admin-prod
+- api-staging.greenlndcraft.in -> ev-backend-staging
+- api.greenlndcraft.in -> ev-backend-prod
+- admin-staging.greenlndcraft.in -> ev-admin-staging
+- admin.greenlndcraft.in -> ev-admin-prod
 
 Apply the blueprint in [render.yaml](../render.yaml), then set secrets in Render:
 - DATABASE_URL

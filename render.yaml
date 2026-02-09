@@ -11,7 +11,7 @@ services:
       - key: NODE_ENV
         value: production
       - key: CORS_ORIGINS
-        value: https://admin-staging.wordchad.com
+        value: https://admin-staging.greenlndcraft.in
       - key: JWT_SECRET
         sync: false
       - key: AUTH_INTERNAL_KEY
@@ -37,7 +37,7 @@ services:
       - key: NODE_ENV
         value: production
       - key: CORS_ORIGINS
-        value: https://admin.wordchad.com
+        value: https://admin.greenlndcraft.in
       - key: JWT_SECRET
         sync: false
       - key: AUTH_INTERNAL_KEY
@@ -63,7 +63,7 @@ services:
       - key: NODE_ENV
         value: production
       - key: NEXT_PUBLIC_API_BASE_URL
-        value: https://api-staging.wordchad.com
+        value: https://api-staging.greenlndcraft.in
 
   - type: web
     name: ev-admin-prod
@@ -77,4 +77,4 @@ services:
       - key: NODE_ENV
         value: production
       - key: NEXT_PUBLIC_API_BASE_URL
-        value: https://api.wordchad.com
+        value: https://api.greenlndcraft.in
