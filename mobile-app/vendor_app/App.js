@@ -2,6 +2,7 @@ import { StatusBar } from 'expo-status-bar';
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import Constants from 'expo-constants';
+import * as DocumentPicker from 'expo-document-picker';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -47,6 +48,7 @@ export default function App() {
     path: 'auth',
     useProxy,
   });
+  const googleRedirectUri = AuthSession.makeRedirectUri({ useProxy: true });
   const googleClientId = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || '';
   const facebookClientId = process.env.EXPO_PUBLIC_FACEBOOK_CLIENT_ID || '';
   const xClientId = process.env.EXPO_PUBLIC_X_CLIENT_ID || '';
@@ -55,7 +57,7 @@ export default function App() {
     {
       clientId: googleClientId,
       scopes: ['openid', 'profile', 'email'],
-      redirectUri,
+      redirectUri: googleRedirectUri,
       responseType: 'code',
       usePKCE: true,
     },
@@ -111,6 +113,7 @@ export default function App() {
   const [forgotOtp, setForgotOtp] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [docFile, setDocFile] = useState(null);
 
   const [profile, setProfile] = useState({
     vendorType: 'Individual',
@@ -156,8 +159,12 @@ export default function App() {
   });
 
   const isAuthenticated = useMemo(() => Boolean(accessToken), [accessToken]);
+  const onboardingStatus = onboarding?.profile?.status;
+  const onboardingAllowed = ['PENDING_VERIFICATION', 'APPROVED', 'ACTIVE', 'SUSPENDED'];
+  const isOnboardingLocked =
+    isAuthenticated && onboardingStatus && !onboardingAllowed.includes(onboardingStatus);
 
-  const exchangeOauthCode = async (provider, response, request) => {
+  const exchangeOauthCode = async (provider, response, request, exchangeRedirectUri) => {
     if (!response || response.type !== 'success') {
       return;
     }
@@ -175,7 +182,7 @@ export default function App() {
         body: {
           code,
           codeVerifier: request?.codeVerifier,
-          redirectUri,
+          redirectUri: exchangeRedirectUri,
         },
       });
       await handleAuthSuccess(data);
@@ -193,7 +200,7 @@ export default function App() {
         setMessage('Google OAuth is not configured.');
         return;
       }
-      await promptGoogle({ useProxy });
+      await promptGoogle({ useProxy: true });
       return;
     }
     if (provider === 'facebook') {
@@ -239,15 +246,21 @@ export default function App() {
   }, [accessToken]);
 
   useEffect(() => {
-    exchangeOauthCode('google', googleResponse, googleRequest);
+    if (isOnboardingLocked) {
+      setActiveTab('Onboarding');
+    }
+  }, [isOnboardingLocked]);
+
+  useEffect(() => {
+    exchangeOauthCode('google', googleResponse, googleRequest, googleRedirectUri);
   }, [googleResponse]);
 
   useEffect(() => {
-    exchangeOauthCode('facebook', facebookResponse, facebookRequest);
+    exchangeOauthCode('facebook', facebookResponse, facebookRequest, redirectUri);
   }, [facebookResponse]);
 
   useEffect(() => {
-    exchangeOauthCode('x', xResponse, xRequest);
+    exchangeOauthCode('x', xResponse, xRequest, redirectUri);
   }, [xResponse]);
 
   const handleAuthSuccess = async (data) => {
@@ -495,6 +508,88 @@ export default function App() {
       });
       await fetchOnboardingStatus();
       setMessage('Document submitted.');
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const pickDocument = async () => {
+    const result = await DocumentPicker.getDocumentAsync({
+      copyToCacheDirectory: false,
+    });
+    if (result.canceled) {
+      return;
+    }
+    const file = result.assets?.[0];
+    if (!file) {
+      return;
+    }
+    setDocFile(file);
+    setDocInput({ ...docInput, fileName: file.name || '' });
+  };
+
+  const uploadDocumentFile = async () => {
+    if (!docFile) {
+      setMessage('Please select a document file first.');
+      return;
+    }
+    if (!docInput.documentCategory || !docInput.documentType) {
+      setMessage('Document category and type are required.');
+      return;
+    }
+
+    setLoading(true);
+    setMessage('');
+    try {
+      const formData = new FormData();
+      formData.append('documentCategory', docInput.documentCategory);
+      formData.append('documentType', docInput.documentType);
+      if (docInput.expiryDate) {
+        formData.append('expiryDate', docInput.expiryDate);
+      }
+      formData.append('file', {
+        uri: docFile.uri,
+        name: docFile.name || 'document',
+        type: docFile.mimeType || 'application/octet-stream',
+      });
+
+      const response = await fetch(`${API_BASE_URL}/vendors/onboarding/documents/upload`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: formData,
+      });
+
+      const text = await response.text();
+      let data = null;
+      if (text) {
+        try {
+          data = JSON.parse(text);
+        } catch {
+          data = null;
+        }
+      }
+
+      if (!response.ok) {
+        const error = new Error(data?.message || 'Document upload failed');
+        error.status = response.status;
+        error.data = data;
+        throw error;
+      }
+
+      setDocFile(null);
+      setDocInput({
+        documentCategory: '',
+        documentType: '',
+        fileUrl: '',
+        fileName: '',
+        expiryDate: '',
+      });
+      await fetchOnboardingStatus();
+      setMessage('Document uploaded.');
     } catch (error) {
       setMessage(error.message);
     } finally {
@@ -1132,27 +1227,22 @@ export default function App() {
           value={docInput.documentType}
           onChangeText={(value) => setDocInput({ ...docInput, documentType: value })}
         />
-        <TextInput
-          style={styles.input}
-          placeholder="File URL"
-          value={docInput.fileUrl}
-          onChangeText={(value) => setDocInput({ ...docInput, fileUrl: value })}
-          autoCapitalize="none"
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="File Name"
-          value={docInput.fileName}
-          onChangeText={(value) => setDocInput({ ...docInput, fileName: value })}
-        />
+        <TouchableOpacity style={styles.buttonSecondary} onPress={pickDocument}>
+          <Text style={styles.buttonText}>Select Document</Text>
+        </TouchableOpacity>
+        {docFile ? (
+          <Text style={styles.hint}>Selected: {docFile.name || 'document'}</Text>
+        ) : (
+          <Text style={styles.hint}>No file selected yet.</Text>
+        )}
         <TextInput
           style={styles.input}
           placeholder="Expiry Date (YYYY-MM-DD)"
           value={docInput.expiryDate}
           onChangeText={(value) => setDocInput({ ...docInput, expiryDate: value })}
         />
-        <TouchableOpacity style={styles.buttonPrimary} onPress={uploadDocument}>
-          <Text style={styles.buttonText}>Upload Metadata</Text>
+        <TouchableOpacity style={styles.buttonPrimary} onPress={uploadDocumentFile}>
+          <Text style={styles.buttonText}>Upload Document</Text>
         </TouchableOpacity>
 
         <View style={styles.divider} />
@@ -1191,6 +1281,12 @@ export default function App() {
           </>
         ) : null}
 
+        {isOnboardingLocked ? (
+          <Text style={styles.message}>
+            Complete onboarding to unlock the dashboard and device management.
+          </Text>
+        ) : null}
+
         {message ? <Text style={styles.message}>{message}</Text> : null}
 
         {loading && (
@@ -1214,6 +1310,7 @@ export default function App() {
                     ? 'Create your vendor account using email or phone.'
                     : 'Sign in to continue.'}
                 </Text>
+                <Text style={styles.authMeta}>API: {API_BASE_URL}</Text>
               </View>
             </View>
 
@@ -1237,6 +1334,15 @@ export default function App() {
                     onChangeText={setPassword}
                     secureTextEntry
                   />
+                  <TouchableOpacity
+                    style={styles.authButtonSecondary}
+                    onPress={() => {
+                      setEmail('test@test.com');
+                      setPassword('Test@123');
+                    }}
+                  >
+                    <Text style={styles.authButtonSecondaryText}>Use Test Login</Text>
+                  </TouchableOpacity>
                   <TouchableOpacity style={styles.authButtonPrimary} onPress={loginEmail}>
                     <Text style={styles.authButtonText}>Sign in</Text>
                   </TouchableOpacity>
@@ -1407,6 +1513,8 @@ export default function App() {
               ) : null}
             </View>
           </View>
+        ) : isOnboardingLocked ? (
+          renderTab()
         ) : (
           <>
             <View style={styles.tabRow}>
@@ -1486,6 +1594,11 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontSize: 14,
     color: '#243423',
+  },
+  authMeta: {
+    marginTop: 10,
+    fontSize: 11,
+    color: '#31422f',
   },
   authCard: {
     backgroundColor: '#ffffff',

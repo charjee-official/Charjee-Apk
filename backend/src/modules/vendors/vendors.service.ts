@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { createHash, randomBytes, randomUUID } from 'crypto';
 import { AuthService } from '../../auth/auth.service';
+import { SupabaseService } from '../../database/supabase.service';
 import {
   DOCUMENT_DEFINITIONS,
   FINANCE_ONE_OF_DOCS,
@@ -17,6 +18,7 @@ export class VendorsService {
   constructor(
     private readonly repository: VendorsRepository,
     private readonly authService: AuthService,
+    private readonly supabaseService: SupabaseService,
   ) {}
 
   listAll() {
@@ -285,6 +287,73 @@ export class VendorsService {
       documentCategory: input.documentCategory,
       documentType: input.documentType,
       fileUrl: input.fileUrl,
+      storagePath,
+      verificationStatus: 'UPLOADED',
+      expiryDate: input.expiryDate ?? null,
+    });
+
+    await this.repository.insertAuditLog({
+      id: randomUUID(),
+      vendorId,
+      action: 'vendor.document.upload',
+      actorRole: 'vendor',
+      actorId: vendorId,
+      metadata: {
+        documentType: input.documentType,
+        documentCategory: input.documentCategory,
+      },
+    });
+
+    if (vendor.status === 'CREATED') {
+      await this.setVendorStatus(vendorId, 'DOCUMENTS_SUBMITTED', 'vendor', vendorId, null);
+    }
+
+    return this.repository.listVendorDocuments(vendorId);
+  }
+
+  async uploadVendorDocumentFile(
+    vendorId: string,
+    input: {
+      documentCategory: string;
+      documentType: string;
+      expiryDate?: string;
+    },
+    file: Express.Multer.File,
+  ) {
+    if (!file) {
+      throw new BadRequestException('File is required');
+    }
+
+    const vendor = await this.repository.getProfileById(vendorId);
+    if (!vendor) {
+      throw new NotFoundException('Vendor not found');
+    }
+
+    const def = DOCUMENT_DEFINITIONS[input.documentType as keyof typeof DOCUMENT_DEFINITIONS];
+    if (!def) {
+      throw new BadRequestException('Unsupported document type');
+    }
+    if (def.category !== input.documentCategory) {
+      throw new BadRequestException('Document category mismatch');
+    }
+
+    const safeName = (file.originalname || `document-${Date.now()}`)
+      .replace(/[^a-zA-Z0-9._-]/g, '_');
+    const storagePath = this.buildStoragePath(vendorId, input.documentType, safeName);
+    const bucket = process.env.SUPABASE_STORAGE_BUCKET || 'vendor-docs';
+    const upload = await this.supabaseService.uploadPublicFile({
+      bucket,
+      path: storagePath.replace(/^\//, ''),
+      data: file.buffer,
+      contentType: file.mimetype,
+    });
+
+    await this.repository.upsertVendorDocument({
+      id: randomUUID(),
+      vendorId,
+      documentCategory: input.documentCategory,
+      documentType: input.documentType,
+      fileUrl: upload.publicUrl,
       storagePath,
       verificationStatus: 'UPLOADED',
       expiryDate: input.expiryDate ?? null,

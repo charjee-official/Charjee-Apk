@@ -1,10 +1,12 @@
-import { Body, Controller, Get, Post, Put, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Put, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { Roles } from '../../auth/roles.decorator';
 import { RolesGuard } from '../../auth/roles.guard';
 import { RequestVendorOtpDto } from './dto/request-vendor-otp.dto';
 import { VendorDocumentDto } from './dto/vendor-document.dto';
+import { VendorDocumentUploadDto } from './dto/vendor-document-upload.dto';
 import { VendorEmailLoginDto } from './dto/vendor-email-login.dto';
 import { VendorEmailRegisterDto } from './dto/vendor-email-register.dto';
 import { VendorEmailResetConfirmDto } from './dto/vendor-email-reset-confirm.dto';
@@ -90,6 +92,20 @@ export class VendorsOnboardingController {
   uploadDocument(@Body() input: VendorDocumentDto, @Req() request: any) {
     const vendorId = String(request.user.vendorId ?? request.user.sub);
     return this.vendorsService.uploadVendorDocument(vendorId, input);
+  }
+
+  @Post('documents/upload')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('vendor')
+  @ApiBearerAuth()
+  @UseInterceptors(FileInterceptor('file'))
+  uploadDocumentFile(
+    @UploadedFile() file: Express.Multer.File,
+    @Body() input: VendorDocumentUploadDto,
+    @Req() request: any,
+  ) {
+    const vendorId = String(request.user.vendorId ?? request.user.sub);
+    return this.vendorsService.uploadVendorDocumentFile(vendorId, input, file);
   }
 
   @Get('documents')
