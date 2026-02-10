@@ -8,6 +8,8 @@ import { RequestVendorOtpDto } from './dto/request-vendor-otp.dto';
 import { VendorDocumentDto } from './dto/vendor-document.dto';
 import { VendorDocumentUploadDto } from './dto/vendor-document-upload.dto';
 import { VendorEmailLoginDto } from './dto/vendor-email-login.dto';
+import { VendorEmailOtpRequestDto } from './dto/vendor-email-otp-request.dto';
+import { VendorEmailOtpVerifyDto } from './dto/vendor-email-otp-verify.dto';
 import { VendorEmailRegisterDto } from './dto/vendor-email-register.dto';
 import { VendorEmailResetConfirmDto } from './dto/vendor-email-reset-confirm.dto';
 import { VendorEmailResetRequestDto } from './dto/vendor-email-reset-request.dto';
@@ -25,6 +27,42 @@ export class VendorsOnboardingController {
   @Post('otp/request')
   requestOtp(@Body() input: RequestVendorOtpDto) {
     return this.vendorsService.requestVendorOtp(input.phone);
+  }
+
+  @Post('contact/phone/request')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('vendor')
+  @ApiBearerAuth()
+  requestPhoneOtp(@Body() input: RequestVendorOtpDto, @Req() request: any) {
+    const vendorId = String(request.user.vendorId ?? request.user.sub);
+    return this.vendorsService.requestVendorPhoneVerification(vendorId, input.phone);
+  }
+
+  @Post('contact/phone/verify')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('vendor')
+  @ApiBearerAuth()
+  verifyPhoneOtp(@Body() input: VerifyVendorOtpDto, @Req() request: any) {
+    const vendorId = String(request.user.vendorId ?? request.user.sub);
+    return this.vendorsService.verifyVendorPhoneVerification(vendorId, input.phone, input.otp);
+  }
+
+  @Post('contact/email/request')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('vendor')
+  @ApiBearerAuth()
+  requestEmailOtp(@Body() input: VendorEmailOtpRequestDto, @Req() request: any) {
+    const vendorId = String(request.user.vendorId ?? request.user.sub);
+    return this.vendorsService.requestVendorEmailVerification(vendorId, input.email);
+  }
+
+  @Post('contact/email/verify')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('vendor')
+  @ApiBearerAuth()
+  verifyEmailOtp(@Body() input: VendorEmailOtpVerifyDto, @Req() request: any) {
+    const vendorId = String(request.user.vendorId ?? request.user.sub);
+    return this.vendorsService.verifyVendorEmailVerification(vendorId, input.email, input.otp);
   }
 
   @Post('otp/verify')

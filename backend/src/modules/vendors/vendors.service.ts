@@ -6,6 +6,7 @@ import {
   DOCUMENT_DEFINITIONS,
   FINANCE_ONE_OF_DOCS,
   REQUIRED_FINANCE_DOCS,
+  REQUIRED_BUSINESS_DOCS,
   REQUIRED_IDENTITY_DOCS,
   REQUIRED_LEGAL_DOCS,
   REQUIRED_PROPERTY_DOCS,
@@ -70,6 +71,54 @@ export class VendorsService {
   async requestVendorOtp(phone: string) {
     await this.authService.requestOtp(phone);
     return { sent: true };
+  }
+
+  async requestVendorPhoneVerification(vendorId: string, phone: string) {
+    const vendor = await this.repository.getProfileById(vendorId);
+    if (!vendor) {
+      throw new NotFoundException('Vendor not found');
+    }
+
+    await this.authService.requestOtp(phone);
+    return { sent: true };
+  }
+
+  async verifyVendorPhoneVerification(vendorId: string, phone: string, otp: string) {
+    const ok = await this.authService.verifyOtpOnly(phone, otp);
+    if (!ok) {
+      throw new UnauthorizedException();
+    }
+
+    await this.repository.updateVendorContactVerification({
+      vendorId,
+      phone,
+      phoneVerified: true,
+    });
+    return { verified: true };
+  }
+
+  async requestVendorEmailVerification(vendorId: string, email: string) {
+    const vendor = await this.repository.getProfileById(vendorId);
+    if (!vendor) {
+      throw new NotFoundException('Vendor not found');
+    }
+
+    await this.authService.requestEmailOtp(email);
+    return { sent: true };
+  }
+
+  async verifyVendorEmailVerification(vendorId: string, email: string, otp: string) {
+    const ok = await this.authService.verifyEmailOtp(email, otp);
+    if (!ok) {
+      throw new UnauthorizedException();
+    }
+
+    await this.repository.updateVendorContactVerification({
+      vendorId,
+      email,
+      emailVerified: true,
+    });
+    return { verified: true };
   }
 
   async verifyVendorOtp(phone: string, otp: string) {
@@ -386,6 +435,11 @@ export class VendorsService {
     const missing = await this.getMissingRequiredUploads(vendorId);
     if (missing.length > 0) {
       throw new BadRequestException(`Missing mandatory documents: ${missing.join(', ')}`);
+    }
+
+    const vendor = await this.repository.getProfileById(vendorId);
+    if (vendor?.vendorType === 'Business' && !vendor.businessName) {
+      throw new BadRequestException('Business name is required for business vendors');
     }
 
     await this.setVendorStatus(
@@ -711,11 +765,13 @@ export class VendorsService {
   }
 
   private async getMissingRequiredUploads(vendorId: string) {
+    const vendor = await this.repository.getProfileById(vendorId);
     const required = [
       ...REQUIRED_IDENTITY_DOCS,
       ...REQUIRED_PROPERTY_DOCS,
       ...REQUIRED_FINANCE_DOCS,
       ...REQUIRED_LEGAL_DOCS,
+      ...(vendor?.vendorType === 'Business' ? REQUIRED_BUSINESS_DOCS : []),
       ...FINANCE_ONE_OF_DOCS,
     ];
     const statuses = await this.repository.getDocumentStatuses(vendorId, required);
@@ -742,11 +798,13 @@ export class VendorsService {
   }
 
   private async getMissingRequiredApprovals(vendorId: string) {
+    const vendor = await this.repository.getProfileById(vendorId);
     const required = [
       ...REQUIRED_IDENTITY_DOCS,
       ...REQUIRED_PROPERTY_DOCS,
       ...REQUIRED_FINANCE_DOCS,
       ...REQUIRED_LEGAL_DOCS,
+      ...(vendor?.vendorType === 'Business' ? REQUIRED_BUSINESS_DOCS : []),
       ...FINANCE_ONE_OF_DOCS,
     ];
     const statuses = await this.repository.getDocumentStatuses(vendorId, required);

@@ -1,100 +1,63 @@
 import { StatusBar } from 'expo-status-bar';
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
-import Constants from 'expo-constants';
-import * as DocumentPicker from 'expo-document-picker';
-import React, { useEffect, useMemo, useState } from 'react';
-import {
-  ActivityIndicator,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
-import { API_BASE_URL, apiRequest, withAuth } from './src/api';
-import { clearTokens, getAccessToken, getRefreshToken, getVendorId, setTokens } from './src/storage';
+  const uploadDocumentForType = async (documentType, documentCategory) => {
+    const result = await DocumentPicker.getDocumentAsync({
+      copyToCacheDirectory: false,
+    });
+    if (result.canceled) {
+      return;
+    }
+    const file = result.assets?.[0];
+    if (!file) {
+      return;
+    }
 
-const docTypeHint = 'aadhaar_front, pan_card, electricity_bill, bank_account_proof, vendor_agreement';
-const docCategoryHint = 'identity, business, property, finance, branding, legal';
-const tabs = [
-  'Dashboard',
-  'Devices',
-  'Users',
-  'Sessions',
-  'Earnings',
-  'Alerts',
-  'Notifications',
-  'Support',
-  'Onboarding',
-];
+    setLoading(true);
+    setMessage('');
+    try {
+      const formData = new FormData();
+      formData.append('documentCategory', documentCategory);
+      formData.append('documentType', documentType);
+      formData.append('file', {
+        uri: file.uri,
+        name: file.name || 'document',
+        type: file.mimeType || 'application/octet-stream',
+      });
 
-WebBrowser.maybeCompleteAuthSession();
+      const response = await fetch(`${API_BASE_URL}/vendors/onboarding/documents/upload`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: formData,
+      });
 
-export default function App() {
-  const [accessToken, setAccessToken] = useState(null);
-  const [refreshToken, setRefreshToken] = useState(null);
-  const [vendorId, setVendorId] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState('');
-  const [onboarding, setOnboarding] = useState(null);
-  const [activeTab, setActiveTab] = useState('Dashboard');
-  const [authScreen, setAuthScreen] = useState('login');
+      const text = await response.text();
+      let data = null;
+      if (text) {
+        try {
+          data = JSON.parse(text);
+        } catch {
+          data = null;
+        }
+      }
 
-  const useProxy = Constants.appOwnership === 'expo';
-  const redirectUri = AuthSession.makeRedirectUri({
-    scheme: 'charjeepartner',
-    path: 'auth',
-    useProxy,
-  });
-  const googleRedirectUri = AuthSession.makeRedirectUri({ useProxy: true });
-  const googleClientId = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || '';
-  const facebookClientId = process.env.EXPO_PUBLIC_FACEBOOK_CLIENT_ID || '';
-  const xClientId = process.env.EXPO_PUBLIC_X_CLIENT_ID || '';
+      if (!response.ok) {
+        const error = new Error(data?.message || 'Document upload failed');
+        error.status = response.status;
+        error.data = data;
+        throw error;
+      }
 
-  const [googleRequest, googleResponse, promptGoogle] = AuthSession.useAuthRequest(
-    {
-      clientId: googleClientId,
-      scopes: ['openid', 'profile', 'email'],
-      redirectUri: googleRedirectUri,
-      responseType: 'code',
-      usePKCE: true,
-    },
-    {
-      authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
-    },
-  );
-
-  const [facebookRequest, facebookResponse, promptFacebook] = AuthSession.useAuthRequest(
-    {
-      clientId: facebookClientId,
-      scopes: ['email', 'public_profile'],
-      redirectUri,
-      responseType: 'code',
-    },
-    {
-      authorizationEndpoint: 'https://www.facebook.com/v19.0/dialog/oauth',
-    },
-  );
-
-  const [xRequest, xResponse, promptX] = AuthSession.useAuthRequest(
-    {
-      clientId: xClientId,
-      scopes: ['users.read'],
-      redirectUri,
-      responseType: 'code',
-      usePKCE: true,
-    },
-    {
-      authorizationEndpoint: 'https://twitter.com/i/oauth2/authorize',
-    },
-  );
-
-  const [dashboard, setDashboard] = useState(null);
-  const [devices, setDevices] = useState([]);
-  const [users, setUsers] = useState([]);
-  const [assignments, setAssignments] = useState([]);
+      await fetchOnboardingStatus();
+      setMessage('Document uploaded.');
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
   const [sessions, setSessions] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [settlements, setSettlements] = useState([]);
@@ -113,7 +76,14 @@ export default function App() {
   const [forgotOtp, setForgotOtp] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [docFile, setDocFile] = useState(null);
+  const [vendorTypeOpen, setVendorTypeOpen] = useState(false);
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [phoneDigits, setPhoneDigits] = useState('');
+  const [phoneOtpInput, setPhoneOtpInput] = useState('');
+  const [emailOtpInput, setEmailOtpInput] = useState('');
+  const [phoneVerified, setPhoneVerified] = useState(false);
+  const [emailVerified, setEmailVerified] = useState(false);
 
   const [profile, setProfile] = useState({
     vendorType: 'Individual',
@@ -128,13 +98,6 @@ export default function App() {
     pincode: '',
   });
 
-  const [docInput, setDocInput] = useState({
-    documentCategory: '',
-    documentType: '',
-    fileUrl: '',
-    fileName: '',
-    expiryDate: '',
-  });
 
   const [deviceRequest, setDeviceRequest] = useState({
     deviceId: '',
@@ -159,6 +122,19 @@ export default function App() {
   });
 
   const isAuthenticated = useMemo(() => Boolean(accessToken), [accessToken]);
+  const documentsToShow = useMemo(
+    () =>
+      profile.vendorType === 'Business'
+        ? [...baseDocuments, ...businessDocuments]
+        : baseDocuments,
+    [profile.vendorType],
+  );
+  const missingRequiredDocs = useMemo(() => {
+    const uploaded = new Set(
+      (onboarding?.documents || []).map((doc) => doc.documentType),
+    );
+    return documentsToShow.filter((doc) => !uploaded.has(doc.documentType));
+  }, [documentsToShow, onboarding]);
   const onboardingStatus = onboarding?.profile?.status;
   const onboardingAllowed = ['PENDING_VERIFICATION', 'APPROVED', 'ACTIVE', 'SUSPENDED'];
   const isOnboardingLocked =
@@ -244,6 +220,34 @@ export default function App() {
       loadPortalData();
     }
   }, [accessToken]);
+
+  useEffect(() => {
+    if (!onboarding?.profile) {
+      return;
+    }
+
+    const fullName = onboarding.profile.fullName || '';
+    const parts = fullName.split(' ').filter(Boolean);
+    setFirstName(parts[0] || '');
+    setLastName(parts.slice(1).join(' '));
+    setProfile((prev) => ({
+      ...prev,
+      vendorType: onboarding.profile.vendorType || prev.vendorType || 'Individual',
+      businessName: onboarding.profile.businessName || '',
+      email: onboarding.profile.email || '',
+      addressLine: onboarding.profile.addressLine || '',
+      city: onboarding.profile.city || '',
+      state: onboarding.profile.state || '',
+      country: onboarding.profile.country || '',
+      pincode: onboarding.profile.pincode || '',
+    }));
+
+    const phone = onboarding.profile.phone || '';
+    const digits = phone.replace(/^\+91/, '').replace(/\D/g, '');
+    setPhoneDigits(digits);
+    setPhoneVerified(Boolean(onboarding.profile.phoneVerifiedAt));
+    setEmailVerified(Boolean(onboarding.profile.emailVerifiedAt));
+  }, [onboarding]);
 
   useEffect(() => {
     if (isOnboardingLocked) {
@@ -476,12 +480,66 @@ export default function App() {
   };
 
   const updateProfile = async () => {
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const trimmedFirst = firstName.trim();
+    const trimmedLast = lastName.trim();
+    if (!trimmedFirst || !trimmedLast) {
+      setMessage('Please enter first and last name.');
+      return;
+    }
+    if (profile.vendorType === 'Business' && !profile.businessName.trim()) {
+      setMessage('Business name is required for business vendors.');
+      return;
+    }
+    if (phoneDigits.length !== 10) {
+      setMessage('Phone number must be 10 digits.');
+      return;
+    }
+    if (!emailPattern.test(profile.email || '')) {
+      setMessage('Enter a valid email address.');
+      return;
+    }
+    if (!profile.addressLine.trim()) {
+      setMessage('Please enter your address.');
+      return;
+    }
+    if (!profile.city.trim()) {
+      setMessage('Please enter your city.');
+      return;
+    }
+    if (!profile.state.trim()) {
+      setMessage('Please enter your state.');
+      return;
+    }
+    if (!profile.country.trim()) {
+      setMessage('Please enter your country.');
+      return;
+    }
+    if (!profile.pincode.trim()) {
+      setMessage('Please enter your pincode.');
+      return;
+    }
+    if (!phoneVerified) {
+      setMessage('Please verify your phone number.');
+      return;
+    }
+    if (!emailVerified) {
+      setMessage('Please verify your email address.');
+      return;
+    }
+
     setLoading(true);
     setMessage('');
     try {
+      const fullName = `${trimmedFirst} ${trimmedLast}`.trim();
+      const phoneValue = `+91${phoneDigits}`;
       await authorizedRequest('/vendors/onboarding/profile', {
         method: 'PUT',
-        body: profile,
+        body: {
+          ...profile,
+          fullName,
+          phone: phoneValue,
+        },
       });
       await fetchOnboardingStatus();
       setMessage('Profile updated.');
@@ -492,22 +550,19 @@ export default function App() {
     }
   };
 
-  const uploadDocument = async () => {
+  const requestPhoneVerification = async () => {
+    if (phoneDigits.length !== 10) {
+      setMessage('Phone number must be 10 digits.');
+      return;
+    }
     setLoading(true);
     setMessage('');
     try {
-      await authorizedRequest('/vendors/onboarding/documents', {
+      await authorizedRequest('/vendors/onboarding/contact/phone/request', {
         method: 'POST',
-        body: {
-          documentCategory: docInput.documentCategory,
-          documentType: docInput.documentType,
-          fileUrl: docInput.fileUrl,
-          fileName: docInput.fileName,
-          expiryDate: docInput.expiryDate || undefined,
-        },
+        body: { phone: `+91${phoneDigits}` },
       });
-      await fetchOnboardingStatus();
-      setMessage('Document submitted.');
+      setMessage('OTP sent to phone.');
     } catch (error) {
       setMessage(error.message);
     } finally {
@@ -515,7 +570,72 @@ export default function App() {
     }
   };
 
-  const pickDocument = async () => {
+  const verifyPhoneVerification = async () => {
+    if (!phoneOtpInput) {
+      setMessage('Enter the phone OTP.');
+      return;
+    }
+    setLoading(true);
+    setMessage('');
+    try {
+      await authorizedRequest('/vendors/onboarding/contact/phone/verify', {
+        method: 'POST',
+        body: { phone: `+91${phoneDigits}`, otp: phoneOtpInput },
+      });
+      setPhoneVerified(true);
+      setPhoneOtpInput('');
+      setMessage('Phone verified.');
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const requestEmailVerification = async () => {
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailPattern.test(profile.email || '')) {
+      setMessage('Enter a valid email address.');
+      return;
+    }
+    setLoading(true);
+    setMessage('');
+    try {
+      await authorizedRequest('/vendors/onboarding/contact/email/request', {
+        method: 'POST',
+        body: { email: profile.email },
+      });
+      setMessage('OTP sent to email.');
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const verifyEmailVerification = async () => {
+    if (!emailOtpInput) {
+      setMessage('Enter the email OTP.');
+      return;
+    }
+    setLoading(true);
+    setMessage('');
+    try {
+      await authorizedRequest('/vendors/onboarding/contact/email/verify', {
+        method: 'POST',
+        body: { email: profile.email, otp: emailOtpInput },
+      });
+      setEmailVerified(true);
+      setEmailOtpInput('');
+      setMessage('Email verified.');
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const uploadDocumentForType = async (documentType, documentCategory) => {
     const result = await DocumentPicker.getDocumentAsync({
       copyToCacheDirectory: false,
     });
@@ -526,33 +646,17 @@ export default function App() {
     if (!file) {
       return;
     }
-    setDocFile(file);
-    setDocInput({ ...docInput, fileName: file.name || '' });
-  };
-
-  const uploadDocumentFile = async () => {
-    if (!docFile) {
-      setMessage('Please select a document file first.');
-      return;
-    }
-    if (!docInput.documentCategory || !docInput.documentType) {
-      setMessage('Document category and type are required.');
-      return;
-    }
 
     setLoading(true);
     setMessage('');
     try {
       const formData = new FormData();
-      formData.append('documentCategory', docInput.documentCategory);
-      formData.append('documentType', docInput.documentType);
-      if (docInput.expiryDate) {
-        formData.append('expiryDate', docInput.expiryDate);
-      }
+      formData.append('documentCategory', documentCategory);
+      formData.append('documentType', documentType);
       formData.append('file', {
-        uri: docFile.uri,
-        name: docFile.name || 'document',
-        type: docFile.mimeType || 'application/octet-stream',
+        uri: file.uri,
+        name: file.name || 'document',
+        type: file.mimeType || 'application/octet-stream',
       });
 
       const response = await fetch(`${API_BASE_URL}/vendors/onboarding/documents/upload`, {
@@ -580,14 +684,6 @@ export default function App() {
         throw error;
       }
 
-      setDocFile(null);
-      setDocInput({
-        documentCategory: '',
-        documentType: '',
-        fileUrl: '',
-        fileName: '',
-        expiryDate: '',
-      });
       await fetchOnboardingStatus();
       setMessage('Document uploaded.');
     } catch (error) {
@@ -598,6 +694,10 @@ export default function App() {
   };
 
   const submitForVerification = async () => {
+    if (missingRequiredDocs.length) {
+      setMessage('Please upload all required documents before submitting.');
+      return;
+    }
     setLoading(true);
     setMessage('');
     try {
@@ -1144,39 +1244,150 @@ export default function App() {
 
         <View style={styles.divider} />
         <Text style={styles.sectionTitle}>Profile</Text>
+        <Text style={styles.label}>Vendor Type</Text>
+        <TouchableOpacity
+          style={styles.dropdown}
+          onPress={() => setVendorTypeOpen((prev) => !prev)}
+        >
+          <Text style={styles.dropdownText}>{profile.vendorType || 'Select type'}</Text>
+        </TouchableOpacity>
+        {vendorTypeOpen ? (
+          <View style={styles.dropdownList}>
+            {['Individual', 'Business', 'Others'].map((type) => (
+              <TouchableOpacity
+                key={type}
+                style={styles.dropdownItem}
+                onPress={() => {
+                  setProfile({ ...profile, vendorType: type });
+                  setVendorTypeOpen(false);
+                }}
+              >
+                <Text style={styles.dropdownItemText}>{type}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        ) : null}
+
         <TextInput
           style={styles.input}
-          placeholder="Vendor Type (Individual | Business)"
-          value={profile.vendorType}
-          onChangeText={(value) => setProfile({ ...profile, vendorType: value })}
+          placeholder="First Name"
+          value={firstName}
+          onChangeText={setFirstName}
         />
         <TextInput
           style={styles.input}
-          placeholder="Full Name"
-          value={profile.fullName}
-          onChangeText={(value) => setProfile({ ...profile, fullName: value })}
+          placeholder="Last Name"
+          value={lastName}
+          onChangeText={setLastName}
         />
-        <TextInput
-          style={styles.input}
-          placeholder="Business Name"
-          value={profile.businessName}
-          onChangeText={(value) => setProfile({ ...profile, businessName: value })}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Phone"
-          value={profile.phone}
-          onChangeText={(value) => setProfile({ ...profile, phone: value })}
-          keyboardType="phone-pad"
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Email"
-          value={profile.email}
-          onChangeText={(value) => setProfile({ ...profile, email: value })}
-          keyboardType="email-address"
-          autoCapitalize="none"
-        />
+        {profile.vendorType === 'Business' ? (
+          <>
+            <TextInput
+              style={styles.input}
+              placeholder="Business Name"
+              value={profile.businessName}
+              onChangeText={(value) => setProfile({ ...profile, businessName: value })}
+            />
+            <Text style={styles.hint}>Business documents are mandatory for verification.</Text>
+          </>
+        ) : null}
+
+        <View style={styles.labelRow}>
+          <Text style={styles.label}>Phone Number</Text>
+          {phoneVerified ? (
+            <View style={styles.badgeSmall}>
+              <Text style={styles.badgeSmallText}>Verified</Text>
+            </View>
+          ) : null}
+        </View>
+        <View style={styles.inlineRow}>
+          <View style={styles.prefixBox}>
+            <Text style={styles.prefixText}>+91</Text>
+          </View>
+          <TextInput
+            style={styles.inlineInput}
+            placeholder="10-digit number"
+            value={phoneDigits}
+            onChangeText={(value) => {
+              const digits = value.replace(/\D/g, '').slice(0, 10);
+              setPhoneDigits(digits);
+              setPhoneVerified(false);
+            }}
+            keyboardType="number-pad"
+          />
+          <TouchableOpacity
+            style={[styles.inlineButton, phoneVerified && styles.inlineButtonDisabled]}
+            onPress={requestPhoneVerification}
+            disabled={phoneVerified}
+          >
+            <Text style={styles.inlineButtonText}>Send OTP</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.inlineRow}>
+          <TextInput
+            style={styles.inlineInput}
+            placeholder="Phone OTP"
+            value={phoneOtpInput}
+            onChangeText={setPhoneOtpInput}
+            keyboardType="number-pad"
+          />
+          <TouchableOpacity
+            style={[styles.inlineButton, phoneVerified && styles.inlineButtonDisabled]}
+            onPress={verifyPhoneVerification}
+            disabled={phoneVerified}
+          >
+            <Text style={styles.inlineButtonText}>
+              {phoneVerified ? 'Verified' : 'Verify'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.labelRow}>
+          <Text style={styles.label}>Email</Text>
+          {emailVerified ? (
+            <View style={styles.badgeSmall}>
+              <Text style={styles.badgeSmallText}>Verified</Text>
+            </View>
+          ) : null}
+        </View>
+        <View style={styles.inlineRow}>
+          <TextInput
+            style={styles.inlineInput}
+            placeholder="Email"
+            value={profile.email}
+            onChangeText={(value) => {
+              setProfile({ ...profile, email: value });
+              setEmailVerified(false);
+            }}
+            keyboardType="email-address"
+            autoCapitalize="none"
+          />
+          <TouchableOpacity
+            style={[styles.inlineButton, emailVerified && styles.inlineButtonDisabled]}
+            onPress={requestEmailVerification}
+            disabled={emailVerified}
+          >
+            <Text style={styles.inlineButtonText}>Send OTP</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.inlineRow}>
+          <TextInput
+            style={styles.inlineInput}
+            placeholder="Email OTP"
+            value={emailOtpInput}
+            onChangeText={setEmailOtpInput}
+            keyboardType="number-pad"
+          />
+          <TouchableOpacity
+            style={[styles.inlineButton, emailVerified && styles.inlineButtonDisabled]}
+            onPress={verifyEmailVerification}
+            disabled={emailVerified}
+          >
+            <Text style={styles.inlineButtonText}>
+              {emailVerified ? 'Verified' : 'Verify'}
+            </Text>
+          </TouchableOpacity>
+        </View>
         <TextInput
           style={styles.input}
           placeholder="Address"
@@ -1213,57 +1424,48 @@ export default function App() {
 
         <View style={styles.divider} />
         <Text style={styles.sectionTitle}>Documents</Text>
-        <Text style={styles.hint}>Types: {docTypeHint}</Text>
-        <Text style={styles.hint}>Categories: {docCategoryHint}</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Document Category"
-          value={docInput.documentCategory}
-          onChangeText={(value) => setDocInput({ ...docInput, documentCategory: value })}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Document Type"
-          value={docInput.documentType}
-          onChangeText={(value) => setDocInput({ ...docInput, documentType: value })}
-        />
-        <TouchableOpacity style={styles.buttonSecondary} onPress={pickDocument}>
-          <Text style={styles.buttonText}>Select Document</Text>
-        </TouchableOpacity>
-        {docFile ? (
-          <Text style={styles.hint}>Selected: {docFile.name || 'document'}</Text>
-        ) : (
-          <Text style={styles.hint}>No file selected yet.</Text>
-        )}
-        <TextInput
-          style={styles.input}
-          placeholder="Expiry Date (YYYY-MM-DD)"
-          value={docInput.expiryDate}
-          onChangeText={(value) => setDocInput({ ...docInput, expiryDate: value })}
-        />
-        <TouchableOpacity style={styles.buttonPrimary} onPress={uploadDocumentFile}>
-          <Text style={styles.buttonText}>Upload Document</Text>
-        </TouchableOpacity>
-
-        <View style={styles.divider} />
-        <Text style={styles.sectionTitle}>Current Documents</Text>
-        {onboarding?.documents?.length ? (
-          onboarding.documents.map((doc) => (
-            <View key={doc.id} style={styles.docRow}>
-              <Text style={styles.docType}>{doc.documentType}</Text>
-              <Text style={styles.docStatus}>{doc.verificationStatus}</Text>
+        {documentsToShow.map((doc) => {
+          const isUploaded = onboarding?.documents?.some(
+            (uploaded) => uploaded.documentType === doc.documentType,
+          );
+          return (
+            <View key={doc.documentType} style={styles.docBlock}>
+              <View style={styles.docLabelRow}>
+                <Text style={styles.docLabel}>{doc.label}</Text>
+                <View style={styles.docRequiredBadge}>
+                  <Text style={styles.docRequiredText}>Required</Text>
+                </View>
+              </View>
+              <View style={styles.docActionRow}>
+                <TouchableOpacity
+                  style={styles.docUploadButton}
+                  onPress={() => uploadDocumentForType(doc.documentType, doc.documentCategory)}
+                >
+                  <Text style={styles.docUploadText}>Upload Document</Text>
+                </TouchableOpacity>
+                {isUploaded ? (
+                  <Text style={styles.docUploaded}>Document uploaded</Text>
+                ) : null}
+              </View>
             </View>
-          ))
-        ) : (
-          <Text style={styles.empty}>No documents uploaded yet.</Text>
-        )}
+          );
+        })}
 
         <View style={styles.divider} />
         <Text style={styles.sectionTitle}>Submit for Verification</Text>
         <Text style={styles.hint}>
           Submit only after mandatory identity, property, finance, and legal documents are uploaded.
         </Text>
-        <TouchableOpacity style={styles.buttonPrimary} onPress={submitForVerification}>
+        {missingRequiredDocs.length ? (
+          <Text style={styles.hint}>
+            Missing: {missingRequiredDocs.map((doc) => doc.label).join(', ')}
+          </Text>
+        ) : null}
+        <TouchableOpacity
+          style={[styles.buttonPrimary, missingRequiredDocs.length && styles.buttonDisabled]}
+          onPress={submitForVerification}
+          disabled={Boolean(missingRequiredDocs.length)}
+        >
           <Text style={styles.buttonText}>Submit for Verification</Text>
         </TouchableOpacity>
       </View>
@@ -1808,6 +2010,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flex: 1,
   },
+  buttonDisabled: {
+    backgroundColor: '#93a1b1',
+  },
   buttonSecondary: {
     backgroundColor: '#3e5c76',
     borderRadius: 10,
@@ -1846,6 +2051,140 @@ const styles = StyleSheet.create({
   hint: {
     color: '#6b7c93',
     marginBottom: 8,
+  },
+  docBlock: {
+    marginBottom: 12,
+  },
+  docLabel: {
+    color: '#1f3a5f',
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  docLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  docRequiredBadge: {
+    backgroundColor: '#fde2e2',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  docRequiredText: {
+    color: '#9b2226',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  docActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  docUploadButton: {
+    backgroundColor: '#3e5c76',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  docUploadText: {
+    color: '#ffffff',
+    fontWeight: '600',
+  },
+  docUploaded: {
+    color: '#2d6a4f',
+    fontWeight: '700',
+  },
+  labelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  badgeSmall: {
+    backgroundColor: '#d8f3dc',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  badgeSmallText: {
+    color: '#2d6a4f',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  dropdown: {
+    borderWidth: 1,
+    borderColor: '#d9e2ec',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    marginBottom: 10,
+    backgroundColor: '#f8fafc',
+  },
+  dropdownText: {
+    color: '#1f3a5f',
+    fontWeight: '600',
+  },
+  dropdownList: {
+    borderWidth: 1,
+    borderColor: '#d9e2ec',
+    borderRadius: 10,
+    backgroundColor: '#ffffff',
+    marginBottom: 10,
+    overflow: 'hidden',
+  },
+  dropdownItem: {
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#edf2f7',
+  },
+  dropdownItemText: {
+    color: '#1f3a5f',
+    fontWeight: '600',
+  },
+  inlineRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+  },
+  prefixBox: {
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: '#d9e2ec',
+    borderRadius: 10,
+    backgroundColor: '#f0f4fa',
+  },
+  prefixText: {
+    color: '#1f3a5f',
+    fontWeight: '600',
+  },
+  inlineInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#d9e2ec',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: '#f8fafc',
+  },
+  inlineButton: {
+    backgroundColor: '#1f3a5f',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+  },
+  inlineButtonDisabled: {
+    backgroundColor: '#93a1b1',
+  },
+  inlineButtonText: {
+    color: '#ffffff',
+    fontWeight: '600',
+    fontSize: 12,
   },
   listRow: {
     flexDirection: 'row',

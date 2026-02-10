@@ -16,6 +16,8 @@ export interface VendorProfileRecord {
   kyc: string;
   phone: string | null;
   email: string | null;
+  phoneVerifiedAt: string | null;
+  emailVerifiedAt: string | null;
   vendorType: string | null;
   fullName: string | null;
   businessName: string | null;
@@ -114,6 +116,8 @@ export class VendorsRepository {
              kyc_status,
              phone,
              email,
+             phone_verified_at,
+             email_verified_at,
              vendor_type,
              full_name,
              business_name,
@@ -142,6 +146,8 @@ export class VendorsRepository {
       kyc: String(row.kyc_status),
       phone: row.phone ? String(row.phone) : null,
       email: row.email ? String(row.email) : null,
+      phoneVerifiedAt: row.phone_verified_at ? String(row.phone_verified_at) : null,
+      emailVerifiedAt: row.email_verified_at ? String(row.email_verified_at) : null,
       vendorType: row.vendor_type ? String(row.vendor_type) : null,
       fullName: row.full_name ? String(row.full_name) : null,
       businessName: row.business_name ? String(row.business_name) : null,
@@ -299,6 +305,31 @@ export class VendorsRepository {
     await pool.query(
       `UPDATE vendors SET email=$2 WHERE id=$1 AND (email IS NULL OR email='')`,
       [vendorId, email],
+    );
+  }
+
+  async updateVendorContactVerification(params: {
+    vendorId: string;
+    phone?: string | null;
+    email?: string | null;
+    phoneVerified?: boolean;
+    emailVerified?: boolean;
+  }) {
+    const pool = this.postgres.getPool();
+    await pool.query(
+      `UPDATE vendors
+       SET phone = COALESCE($2, phone),
+           email = COALESCE($3, email),
+           phone_verified_at = CASE WHEN $4 THEN NOW() ELSE phone_verified_at END,
+           email_verified_at = CASE WHEN $5 THEN NOW() ELSE email_verified_at END
+       WHERE id = $1`,
+      [
+        params.vendorId,
+        params.phone ?? null,
+        params.email ?? null,
+        params.phoneVerified ?? false,
+        params.emailVerified ?? false,
+      ],
     );
   }
 

@@ -92,6 +92,12 @@ export const REQUIRED_PROPERTY_DOCS: DocumentType[] = [
   'commercial_power_approval',
 ];
 
+export const REQUIRED_BUSINESS_DOCS: DocumentType[] = [
+  'gst_certificate',
+  'business_registration',
+  'trade_license',
+];
+
 export const REQUIRED_FINANCE_DOCS: DocumentType[] = [
   'bank_account_proof',
 ];
