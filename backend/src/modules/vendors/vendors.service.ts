@@ -172,10 +172,10 @@ export class VendorsService {
     await this.authService.updatePassword(email, newPassword);
     await this.repository.insertAuditLog({
       id: randomUUID(),
-      vendorId: credential.subjectId,
+      vendorId: credential.subject_id,
       action: 'vendor.password.reset',
       actorRole: 'vendor',
-      actorId: credential.subjectId,
+      actorId: credential.subject_id,
     });
     return { ok: true };
   }
