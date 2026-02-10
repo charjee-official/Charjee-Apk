@@ -148,6 +148,52 @@ export class VendorsService {
     return { vendorId: credential.subjectId, ...tokens };
   }
 
+  async requestVendorPasswordReset(email: string) {
+    const credential = await this.authService.getCredentialByUsername(email);
+    if (!credential || credential.role !== 'vendor') {
+      return { sent: true };
+    }
+
+    await this.authService.requestEmailOtp(email);
+    return { sent: true };
+  }
+
+  async confirmVendorPasswordReset(email: string, otp: string, newPassword: string) {
+    const credential = await this.authService.getCredentialByUsername(email);
+    if (!credential || credential.role !== 'vendor') {
+      throw new UnauthorizedException();
+    }
+
+    const ok = await this.authService.verifyEmailOtp(email, otp);
+    if (!ok) {
+      throw new UnauthorizedException();
+    }
+
+    await this.authService.updatePassword(email, newPassword);
+    await this.repository.insertAuditLog({
+      id: randomUUID(),
+      vendorId: credential.subjectId,
+      action: 'vendor.password.reset',
+      actorRole: 'vendor',
+      actorId: credential.subjectId,
+    });
+    return { ok: true };
+  }
+
+  async exchangeVendorOauth(
+    provider: string,
+    input: { code: string; codeVerifier?: string; redirectUri: string },
+  ) {
+    const profile = await this.fetchOauthProfile(provider, input);
+    if (!profile.providerUserId) {
+      throw new BadRequestException('OAuth profile missing user id');
+    }
+
+    const vendorId = await this.resolveVendorFromOauth(provider, profile);
+    const tokens = await this.issueVendorTokens(vendorId);
+    return { vendorId, provider, ...tokens };
+  }
+
   async refreshVendorToken(refreshToken: string) {
     const tokenHash = this.hashToken(refreshToken);
     const record = await this.repository.getRefreshTokenByHash(tokenHash);
@@ -345,6 +391,225 @@ export class VendorsService {
       expiresAt,
     });
     return token;
+  }
+
+  private async resolveVendorFromOauth(
+    provider: string,
+    profile: { providerUserId: string; email?: string | null; name?: string | null },
+  ) {
+    const existingIdentity = await this.authService.getOauthIdentity(
+      provider,
+      profile.providerUserId,
+    );
+    if (existingIdentity) {
+      return String(existingIdentity.subject_id);
+    }
+
+    let vendor = profile.email ? await this.repository.getByEmail(profile.email) : null;
+    if (!vendor) {
+      const id = randomUUID();
+      await this.repository.createVendorOnboarding({
+        id,
+        name: profile.name || profile.email || `${provider}:${profile.providerUserId}`,
+        status: 'CREATED',
+        kyc: 'Pending',
+        email: profile.email ?? null,
+      });
+      await this.setVendorStatus(id, 'CREATED', 'vendor', id, `Vendor registered via ${provider}`);
+      vendor = await this.repository.getProfileById(id);
+    }
+
+    if (!vendor) {
+      throw new NotFoundException('Vendor not found');
+    }
+
+    if (profile.email) {
+      await this.repository.updateVendorEmailIfMissing(vendor.id, profile.email);
+    }
+
+    await this.authService.createOauthIdentity({
+      id: randomUUID(),
+      role: 'vendor',
+      subjectId: vendor.id,
+      provider,
+      providerUserId: profile.providerUserId,
+      email: profile.email ?? null,
+      displayName: profile.name ?? null,
+    });
+
+    await this.repository.insertAuditLog({
+      id: randomUUID(),
+      vendorId: vendor.id,
+      action: 'vendor.login.oauth',
+      actorRole: 'vendor',
+      actorId: vendor.id,
+      metadata: { provider },
+    });
+
+    return vendor.id;
+  }
+
+  private async fetchOauthProfile(
+    provider: string,
+    input: { code: string; codeVerifier?: string; redirectUri: string },
+  ) {
+    if (provider === 'google') {
+      return this.exchangeGoogle(input);
+    }
+    if (provider === 'facebook') {
+      return this.exchangeFacebook(input);
+    }
+    if (provider === 'x') {
+      return this.exchangeX(input);
+    }
+
+    throw new BadRequestException('Unsupported OAuth provider');
+  }
+
+  private async exchangeGoogle(input: { code: string; codeVerifier?: string; redirectUri: string }) {
+    const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
+    if (!clientId || !clientSecret) {
+      throw new BadRequestException('Google OAuth not configured');
+    }
+
+    const params = new URLSearchParams({
+      code: input.code,
+      client_id: clientId,
+      client_secret: clientSecret,
+      redirect_uri: input.redirectUri,
+      grant_type: 'authorization_code',
+    });
+    if (input.codeVerifier) {
+      params.set('code_verifier', input.codeVerifier);
+    }
+
+    const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params,
+    });
+
+    if (!tokenResponse.ok) {
+      const text = await tokenResponse.text();
+      throw new BadRequestException(`Google token exchange failed: ${text}`);
+    }
+
+    const token = (await tokenResponse.json()) as { access_token: string };
+    const profileResponse = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+      headers: { Authorization: `Bearer ${token.access_token}` },
+    });
+
+    if (!profileResponse.ok) {
+      const text = await profileResponse.text();
+      throw new BadRequestException(`Google profile fetch failed: ${text}`);
+    }
+
+    const profile = (await profileResponse.json()) as {
+      sub?: string;
+      id?: string;
+      email?: string;
+      name?: string;
+    };
+
+    return {
+      providerUserId: profile.sub || profile.id || '',
+      email: profile.email ?? null,
+      name: profile.name ?? null,
+    };
+  }
+
+  private async exchangeFacebook(input: { code: string; codeVerifier?: string; redirectUri: string }) {
+    const clientId = process.env.FACEBOOK_OAUTH_CLIENT_ID;
+    const clientSecret = process.env.FACEBOOK_OAUTH_CLIENT_SECRET;
+    if (!clientId || !clientSecret) {
+      throw new BadRequestException('Facebook OAuth not configured');
+    }
+
+    const tokenUrl = new URL('https://graph.facebook.com/v19.0/oauth/access_token');
+    tokenUrl.searchParams.set('client_id', clientId);
+    tokenUrl.searchParams.set('client_secret', clientSecret);
+    tokenUrl.searchParams.set('redirect_uri', input.redirectUri);
+    tokenUrl.searchParams.set('code', input.code);
+
+    const tokenResponse = await fetch(tokenUrl.toString());
+    if (!tokenResponse.ok) {
+      const text = await tokenResponse.text();
+      throw new BadRequestException(`Facebook token exchange failed: ${text}`);
+    }
+
+    const token = (await tokenResponse.json()) as { access_token: string };
+    const profileUrl = new URL('https://graph.facebook.com/me');
+    profileUrl.searchParams.set('fields', 'id,name,email');
+    profileUrl.searchParams.set('access_token', token.access_token);
+    const profileResponse = await fetch(profileUrl.toString());
+    if (!profileResponse.ok) {
+      const text = await profileResponse.text();
+      throw new BadRequestException(`Facebook profile fetch failed: ${text}`);
+    }
+
+    const profile = (await profileResponse.json()) as {
+      id?: string;
+      email?: string;
+      name?: string;
+    };
+
+    return {
+      providerUserId: profile.id || '',
+      email: profile.email ?? null,
+      name: profile.name ?? null,
+    };
+  }
+
+  private async exchangeX(input: { code: string; codeVerifier?: string; redirectUri: string }) {
+    const clientId = process.env.X_OAUTH_CLIENT_ID;
+    const clientSecret = process.env.X_OAUTH_CLIENT_SECRET;
+    if (!clientId || !input.codeVerifier) {
+      throw new BadRequestException('X OAuth not configured');
+    }
+
+    const params = new URLSearchParams({
+      code: input.code,
+      grant_type: 'authorization_code',
+      client_id: clientId,
+      redirect_uri: input.redirectUri,
+      code_verifier: input.codeVerifier,
+    });
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    };
+    if (clientSecret) {
+      headers.Authorization = `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`;
+    }
+
+    const tokenResponse = await fetch('https://api.twitter.com/2/oauth2/token', {
+      method: 'POST',
+      headers,
+      body: params,
+    });
+
+    if (!tokenResponse.ok) {
+      const text = await tokenResponse.text();
+      throw new BadRequestException(`X token exchange failed: ${text}`);
+    }
+
+    const token = (await tokenResponse.json()) as { access_token: string };
+    const profileResponse = await fetch('https://api.twitter.com/2/users/me', {
+      headers: { Authorization: `Bearer ${token.access_token}` },
+    });
+
+    if (!profileResponse.ok) {
+      const text = await profileResponse.text();
+      throw new BadRequestException(`X profile fetch failed: ${text}`);
+    }
+
+    const profile = (await profileResponse.json()) as { data?: { id?: string; name?: string } };
+    return {
+      providerUserId: profile.data?.id ?? '',
+      email: null,
+      name: profile.data?.name ?? null,
+    };
   }
 
   private hashToken(token: string) {

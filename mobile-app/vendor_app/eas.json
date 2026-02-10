@@ -12,8 +12,11 @@
     },
     "production": {
       "channel": "production",
+      "android": {
+        "buildType": "apk"
+      },
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://api.greenlndcraft.in"
+        "EXPO_PUBLIC_API_BASE_URL": "https://ev-backend-prod.onrender.com"
       }
     }
   }

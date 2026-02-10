@@ -1,4 +1,7 @@
 import { StatusBar } from 'expo-status-bar';
+import * as AuthSession from 'expo-auth-session';
+import * as WebBrowser from 'expo-web-browser';
+import Constants from 'expo-constants';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -26,6 +29,8 @@ const tabs = [
   'Onboarding',
 ];
 
+WebBrowser.maybeCompleteAuthSession();
+
 export default function App() {
   const [accessToken, setAccessToken] = useState(null);
   const [refreshToken, setRefreshToken] = useState(null);
@@ -34,6 +39,55 @@ export default function App() {
   const [message, setMessage] = useState('');
   const [onboarding, setOnboarding] = useState(null);
   const [activeTab, setActiveTab] = useState('Dashboard');
+  const [authScreen, setAuthScreen] = useState('login');
+
+  const useProxy = Constants.appOwnership === 'expo';
+  const redirectUri = AuthSession.makeRedirectUri({
+    scheme: 'charjeepartner',
+    path: 'auth',
+    useProxy,
+  });
+  const googleClientId = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || '';
+  const facebookClientId = process.env.EXPO_PUBLIC_FACEBOOK_CLIENT_ID || '';
+  const xClientId = process.env.EXPO_PUBLIC_X_CLIENT_ID || '';
+
+  const [googleRequest, googleResponse, promptGoogle] = AuthSession.useAuthRequest(
+    {
+      clientId: googleClientId,
+      scopes: ['openid', 'profile', 'email'],
+      redirectUri,
+      responseType: 'code',
+      usePKCE: true,
+    },
+    {
+      authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
+    },
+  );
+
+  const [facebookRequest, facebookResponse, promptFacebook] = AuthSession.useAuthRequest(
+    {
+      clientId: facebookClientId,
+      scopes: ['email', 'public_profile'],
+      redirectUri,
+      responseType: 'code',
+    },
+    {
+      authorizationEndpoint: 'https://www.facebook.com/v19.0/dialog/oauth',
+    },
+  );
+
+  const [xRequest, xResponse, promptX] = AuthSession.useAuthRequest(
+    {
+      clientId: xClientId,
+      scopes: ['users.read'],
+      redirectUri,
+      responseType: 'code',
+      usePKCE: true,
+    },
+    {
+      authorizationEndpoint: 'https://twitter.com/i/oauth2/authorize',
+    },
+  );
 
   const [dashboard, setDashboard] = useState(null);
   const [devices, setDevices] = useState([]);
@@ -53,6 +107,10 @@ export default function App() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [registerPhone, setRegisterPhone] = useState('');
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotOtp, setForgotOtp] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
 
   const [profile, setProfile] = useState({
     vendorType: 'Individual',
@@ -99,6 +157,62 @@ export default function App() {
 
   const isAuthenticated = useMemo(() => Boolean(accessToken), [accessToken]);
 
+  const exchangeOauthCode = async (provider, response, request) => {
+    if (!response || response.type !== 'success') {
+      return;
+    }
+    const code = response.params?.code;
+    if (!code) {
+      setMessage('OAuth response missing code.');
+      return;
+    }
+
+    setLoading(true);
+    setMessage('');
+    try {
+      const data = await apiRequest(`/vendors/onboarding/oauth/${provider}/exchange`, {
+        method: 'POST',
+        body: {
+          code,
+          codeVerifier: request?.codeVerifier,
+          redirectUri,
+        },
+      });
+      await handleAuthSuccess(data);
+      setMessage(`Signed in with ${provider}.`);
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const startOauth = async (provider) => {
+    if (provider === 'google') {
+      if (!googleClientId) {
+        setMessage('Google OAuth is not configured.');
+        return;
+      }
+      await promptGoogle({ useProxy });
+      return;
+    }
+    if (provider === 'facebook') {
+      if (!facebookClientId) {
+        setMessage('Facebook OAuth is not configured.');
+        return;
+      }
+      await promptFacebook({ useProxy });
+      return;
+    }
+    if (provider === 'x') {
+      if (!xClientId) {
+        setMessage('X OAuth is not configured.');
+        return;
+      }
+      await promptX({ useProxy });
+    }
+  };
+
   useEffect(() => {
     const hydrate = async () => {
       const storedAccess = await getAccessToken();
@@ -123,6 +237,18 @@ export default function App() {
       loadPortalData();
     }
   }, [accessToken]);
+
+  useEffect(() => {
+    exchangeOauthCode('google', googleResponse, googleRequest);
+  }, [googleResponse]);
+
+  useEffect(() => {
+    exchangeOauthCode('facebook', facebookResponse, facebookRequest);
+  }, [facebookResponse]);
+
+  useEffect(() => {
+    exchangeOauthCode('x', xResponse, xRequest);
+  }, [xResponse]);
 
   const handleAuthSuccess = async (data) => {
     setAccessToken(data.accessToken);
@@ -280,6 +406,55 @@ export default function App() {
       });
       await handleAuthSuccess(data);
       setMessage('Logged in with email.');
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const requestPasswordReset = async () => {
+    if (!forgotEmail) {
+      setMessage('Enter your email first.');
+      return;
+    }
+    setLoading(true);
+    setMessage('');
+    try {
+      await apiRequest('/vendors/onboarding/email/reset/request', {
+        method: 'POST',
+        body: { email: forgotEmail },
+      });
+      setMessage('OTP sent to your email.');
+      setAuthScreen('reset');
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const confirmPasswordReset = async () => {
+    if (!forgotOtp || !newPassword || !confirmPassword) {
+      setMessage('Enter OTP and new password.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setMessage('Passwords do not match.');
+      return;
+    }
+    setLoading(true);
+    setMessage('');
+    try {
+      await apiRequest('/vendors/onboarding/email/reset/confirm', {
+        method: 'POST',
+        body: { email: forgotEmail, otp: forgotOtp, newPassword },
+      });
+      setForgotOtp('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setMessage('Password reset successful. Please sign in.');
+      setAuthScreen('login');
     } catch (error) {
       setMessage(error.message);
     } finally {
@@ -503,6 +678,7 @@ export default function App() {
     setRefreshToken(null);
     setVendorId(null);
     setOnboarding(null);
+    setAuthScreen('login');
     setMessage('Logged out.');
   };
 
@@ -1008,8 +1184,12 @@ export default function App() {
     <View style={styles.container}>
       <StatusBar style="dark" />
       <ScrollView contentContainerStyle={styles.scroll}>
-        <Text style={styles.title}>Vendor Portal</Text>
-        <Text style={styles.subTitle}>API: {API_BASE_URL}</Text>
+        {isAuthenticated ? (
+          <>
+            <Text style={styles.title}>Vendor Portal</Text>
+            <Text style={styles.subTitle}>API: {API_BASE_URL}</Text>
+          </>
+        ) : null}
 
         {message ? <Text style={styles.message}>{message}</Text> : null}
 
@@ -1021,64 +1201,211 @@ export default function App() {
         )}
 
         {!isAuthenticated ? (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>OTP Login</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Phone"
-              value={phone}
-              onChangeText={setPhone}
-              keyboardType="phone-pad"
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="OTP"
-              value={otp}
-              onChangeText={setOtp}
-              keyboardType="number-pad"
-            />
-            <View style={styles.row}>
-              <TouchableOpacity style={styles.buttonSecondary} onPress={requestOtp}>
-                <Text style={styles.buttonText}>Request OTP</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.buttonPrimary} onPress={verifyOtp}>
-                <Text style={styles.buttonText}>Verify</Text>
-              </TouchableOpacity>
+          <View style={styles.authShell}>
+            <View style={styles.authHero}>
+              <View style={styles.authHeroBase} />
+              <View style={styles.authHeroTilt} />
+              <View style={styles.authHeroContent}>
+                <Text style={styles.authHeroTitle}>
+                  {authScreen === 'register' ? 'Sign up' : 'Login'}
+                </Text>
+                <Text style={styles.authHeroSubtitle}>
+                  {authScreen === 'register'
+                    ? 'Create your vendor account using email or phone.'
+                    : 'Sign in to continue.'}
+                </Text>
+              </View>
             </View>
 
-            <View style={styles.divider} />
+            <View style={styles.authCard}>
+              {authScreen === 'login' ? (
+                <>
+                  <Text style={styles.authLabel}>Username</Text>
+                  <TextInput
+                    style={styles.authInput}
+                    placeholder="Email"
+                    value={email}
+                    onChangeText={setEmail}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                  />
+                  <Text style={styles.authLabel}>Password</Text>
+                  <TextInput
+                    style={styles.authInput}
+                    placeholder="Password"
+                    value={password}
+                    onChangeText={setPassword}
+                    secureTextEntry
+                  />
+                  <TouchableOpacity style={styles.authButtonPrimary} onPress={loginEmail}>
+                    <Text style={styles.authButtonText}>Sign in</Text>
+                  </TouchableOpacity>
+                  <View style={styles.authDivider}>
+                    <View style={styles.authDividerLine} />
+                    <Text style={styles.authDividerText}>or</Text>
+                    <View style={styles.authDividerLine} />
+                  </View>
+                  <View style={styles.authSocialRow}>
+                    <TouchableOpacity
+                      style={[styles.authSocialButton, styles.authSocialGoogle]}
+                      onPress={() => startOauth('google')}
+                    >
+                      <Text style={styles.authSocialText}>Google</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.authSocialButton, styles.authSocialFacebook]}
+                      onPress={() => startOauth('facebook')}
+                    >
+                      <Text style={styles.authSocialText}>Facebook</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.authSocialButton, styles.authSocialX]}
+                      onPress={() => startOauth('x')}
+                    >
+                      <Text style={styles.authSocialText}>X</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <TouchableOpacity style={styles.authLink} onPress={() => setAuthScreen('otp')}>
+                    <Text style={styles.authLinkText}>Login with phone OTP</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.authLink} onPress={() => setAuthScreen('forgot')}>
+                    <Text style={styles.authLinkText}>Forgot password?</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.authLink} onPress={() => setAuthScreen('register')}>
+                    <Text style={styles.authLinkText}>New user? Sign up with email or phone</Text>
+                  </TouchableOpacity>
+                </>
+              ) : null}
 
-            <Text style={styles.cardTitle}>Email Login</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Email"
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Password"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-            />
-            <TouchableOpacity style={styles.buttonPrimary} onPress={loginEmail}>
-              <Text style={styles.buttonText}>Login</Text>
-            </TouchableOpacity>
+              {authScreen === 'forgot' ? (
+                <>
+                  <TouchableOpacity style={styles.authBack} onPress={() => setAuthScreen('login')}>
+                    <Text style={styles.authBackText}>Back</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.authLabel}>Email</Text>
+                  <TextInput
+                    style={styles.authInput}
+                    placeholder="Email"
+                    value={forgotEmail}
+                    onChangeText={setForgotEmail}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                  />
+                  <TouchableOpacity style={styles.authButtonPrimary} onPress={requestPasswordReset}>
+                    <Text style={styles.authButtonText}>Send OTP</Text>
+                  </TouchableOpacity>
+                </>
+              ) : null}
 
-            <Text style={styles.cardTitle}>Email Registration</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Phone (optional)"
-              value={registerPhone}
-              onChangeText={setRegisterPhone}
-              keyboardType="phone-pad"
-            />
-            <TouchableOpacity style={styles.buttonSecondary} onPress={registerEmail}>
-              <Text style={styles.buttonText}>Register</Text>
-            </TouchableOpacity>
+              {authScreen === 'register' ? (
+                <>
+                  <TouchableOpacity
+                    style={styles.authBack}
+                    onPress={() => setAuthScreen('login')}
+                  >
+                    <Text style={styles.authBackText}>Back</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.authLabel}>Email</Text>
+                  <TextInput
+                    style={styles.authInput}
+                    placeholder="Email"
+                    value={email}
+                    onChangeText={setEmail}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                  />
+                  <Text style={styles.authLabel}>Password</Text>
+                  <TextInput
+                    style={styles.authInput}
+                    placeholder="Password"
+                    value={password}
+                    onChangeText={setPassword}
+                    secureTextEntry
+                  />
+                  <Text style={styles.authLabel}>Phone (optional)</Text>
+                  <TextInput
+                    style={styles.authInput}
+                    placeholder="Phone"
+                    value={registerPhone}
+                    onChangeText={setRegisterPhone}
+                    keyboardType="phone-pad"
+                  />
+                  <TouchableOpacity style={styles.authButtonPrimary} onPress={registerEmail}>
+                    <Text style={styles.authButtonText}>Sign up</Text>
+                  </TouchableOpacity>
+                </>
+              ) : null}
+
+              {authScreen === 'otp' ? (
+                <>
+                  <TouchableOpacity
+                    style={styles.authBack}
+                    onPress={() => setAuthScreen('login')}
+                  >
+                    <Text style={styles.authBackText}>Back</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.authLabel}>Phone</Text>
+                  <TextInput
+                    style={styles.authInput}
+                    placeholder="Phone"
+                    value={phone}
+                    onChangeText={setPhone}
+                    keyboardType="phone-pad"
+                  />
+                  <Text style={styles.authLabel}>OTP</Text>
+                  <TextInput
+                    style={styles.authInput}
+                    placeholder="OTP"
+                    value={otp}
+                    onChangeText={setOtp}
+                    keyboardType="number-pad"
+                  />
+                  <View style={styles.row}>
+                    <TouchableOpacity style={styles.authButtonSecondary} onPress={requestOtp}>
+                      <Text style={styles.authButtonSecondaryText}>Request OTP</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.authButtonPrimary} onPress={verifyOtp}>
+                      <Text style={styles.authButtonText}>Verify</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              ) : null}
+
+              {authScreen === 'reset' ? (
+                <>
+                  <TouchableOpacity style={styles.authBack} onPress={() => setAuthScreen('forgot')}>
+                    <Text style={styles.authBackText}>Back</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.authLabel}>Email OTP</Text>
+                  <TextInput
+                    style={styles.authInput}
+                    placeholder="OTP"
+                    value={forgotOtp}
+                    onChangeText={setForgotOtp}
+                    keyboardType="number-pad"
+                  />
+                  <Text style={styles.authLabel}>New Password</Text>
+                  <TextInput
+                    style={styles.authInput}
+                    placeholder="New Password"
+                    value={newPassword}
+                    onChangeText={setNewPassword}
+                    secureTextEntry
+                  />
+                  <Text style={styles.authLabel}>Confirm Password</Text>
+                  <TextInput
+                    style={styles.authInput}
+                    placeholder="Confirm Password"
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                    secureTextEntry
+                  />
+                  <TouchableOpacity style={styles.authButtonPrimary} onPress={confirmPasswordReset}>
+                    <Text style={styles.authButtonText}>Reset Password</Text>
+                  </TouchableOpacity>
+                </>
+              ) : null}
+            </View>
           </View>
         ) : (
           <>
@@ -1116,6 +1443,161 @@ const styles = StyleSheet.create({
   scroll: {
     padding: 20,
     paddingBottom: 48,
+  },
+  authShell: {
+    paddingTop: 10,
+  },
+  authHero: {
+    height: 220,
+    borderRadius: 18,
+    backgroundColor: '#c9d7ad',
+    overflow: 'hidden',
+    marginBottom: 18,
+  },
+  authHeroBase: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 140,
+    backgroundColor: '#2f5a32',
+  },
+  authHeroTilt: {
+    position: 'absolute',
+    top: 80,
+    left: -60,
+    right: -60,
+    height: 160,
+    backgroundColor: '#557a3a',
+    transform: [{ rotate: '-6deg' }],
+  },
+  authHeroContent: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    paddingHorizontal: 18,
+    paddingBottom: 24,
+  },
+  authHeroTitle: {
+    fontSize: 30,
+    fontWeight: '800',
+    color: '#10210f',
+  },
+  authHeroSubtitle: {
+    marginTop: 8,
+    fontSize: 14,
+    color: '#243423',
+  },
+  authCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 18,
+    shadowColor: '#0f1c2e',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    elevation: 3,
+  },
+  authLabel: {
+    fontSize: 13,
+    color: '#2f3c2a',
+    marginBottom: 6,
+  },
+  authInput: {
+    borderWidth: 1,
+    borderColor: '#bcc9a7',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 12,
+    backgroundColor: '#e6eed2',
+  },
+  authButtonPrimary: {
+    backgroundColor: '#2f4f2e',
+    borderRadius: 12,
+    paddingVertical: 13,
+    alignItems: 'center',
+    marginBottom: 10,
+    flex: 1,
+  },
+  authButtonSecondary: {
+    backgroundColor: '#c9d7ad',
+    borderRadius: 12,
+    paddingVertical: 13,
+    alignItems: 'center',
+    marginBottom: 10,
+    flex: 1,
+  },
+  authButtonText: {
+    color: '#ffffff',
+    fontWeight: '700',
+    fontSize: 15,
+  },
+  authButtonSecondaryText: {
+    color: '#2f4f2e',
+    fontWeight: '700',
+    fontSize: 15,
+  },
+  authDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 10,
+  },
+  authDividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#c4d2ae',
+  },
+  authDividerText: {
+    marginHorizontal: 8,
+    color: '#4a5b40',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  authSocialRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 6,
+  },
+  authSocialButton: {
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  authSocialText: {
+    color: '#10210f',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  authSocialGoogle: {
+    backgroundColor: '#f1f4e8',
+    borderWidth: 1,
+    borderColor: '#cdd8bd',
+  },
+  authSocialFacebook: {
+    backgroundColor: '#e5edff',
+    borderWidth: 1,
+    borderColor: '#c4d1f7',
+  },
+  authSocialX: {
+    backgroundColor: '#e3e8ea',
+    borderWidth: 1,
+    borderColor: '#c5ced1',
+  },
+  authLink: {
+    alignItems: 'center',
+    marginTop: 6,
+  },
+  authLinkText: {
+    color: '#2f4f2e',
+    fontWeight: '700',
+  },
+  authBack: {
+    marginBottom: 10,
+  },
+  authBackText: {
+    color: '#2f4f2e',
+    fontWeight: '700',
   },
   title: {
     fontSize: 28,

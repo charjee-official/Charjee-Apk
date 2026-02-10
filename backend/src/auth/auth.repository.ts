@@ -70,4 +70,60 @@ export class AuthRepository {
       return id;
     }
   }
+
+  async updateCredentialPassword(username: string, passwordHash: string) {
+    const pool = this.postgres.getPool();
+    await pool.query(
+      `UPDATE auth_credentials SET password_hash=$2 WHERE username=$1`,
+      [username, passwordHash],
+    );
+  }
+
+  async getOauthIdentity(provider: string, providerUserId: string) {
+    const pool = this.postgres.getPool();
+    const result = await pool.query(
+      `SELECT id, role, subject_id, provider, provider_user_id, email, display_name
+       FROM oauth_identities
+       WHERE provider=$1 AND provider_user_id=$2
+       LIMIT 1`,
+      [provider, providerUserId],
+    );
+    return result.rows[0] as
+      | {
+          id: string;
+          role: UserRole;
+          subject_id: string;
+          provider: string;
+          provider_user_id: string;
+          email: string | null;
+          display_name: string | null;
+        }
+      | undefined;
+  }
+
+  async createOauthIdentity(params: {
+    id: string;
+    role: UserRole;
+    subjectId: string;
+    provider: string;
+    providerUserId: string;
+    email?: string | null;
+    displayName?: string | null;
+  }) {
+    const pool = this.postgres.getPool();
+    await pool.query(
+      `INSERT INTO oauth_identities (id, role, subject_id, provider, provider_user_id, email, display_name)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
+       ON CONFLICT (provider, provider_user_id) DO NOTHING`,
+      [
+        params.id,
+        params.role,
+        params.subjectId,
+        params.provider,
+        params.providerUserId,
+        params.email ?? null,
+        params.displayName ?? null,
+      ],
+    );
+  }
 }

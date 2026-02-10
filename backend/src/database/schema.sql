@@ -14,6 +14,21 @@ CREATE TABLE IF NOT EXISTS auth_credentials (
   created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS oauth_identities (
+  id UUID PRIMARY KEY,
+  role VARCHAR(16) NOT NULL,
+  subject_id UUID NOT NULL,
+  provider VARCHAR(32) NOT NULL,
+  provider_user_id TEXT NOT NULL,
+  email TEXT,
+  display_name TEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS oauth_identities_provider_user_idx
+  ON oauth_identities(provider, provider_user_id);
+CREATE INDEX IF NOT EXISTS oauth_identities_email_idx ON oauth_identities(email);
+
 CREATE TABLE IF NOT EXISTS vendors (
   id UUID PRIMARY KEY,
   name TEXT NOT NULL,

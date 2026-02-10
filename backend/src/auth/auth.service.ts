@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { AuthRepository } from './auth.repository';
+import { EmailOtpService } from './email-otp.service';
 import { OtpService } from './otp.service';
 
 export type UserRole = 'user' | 'vendor' | 'admin';
@@ -18,6 +19,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly authRepository: AuthRepository,
     private readonly otpService: OtpService,
+    private readonly emailOtpService: EmailOtpService,
   ) {}
 
   signToken(payload: JwtPayload) {
@@ -66,6 +68,15 @@ export class AuthService {
     return this.otpService.verifyOtp(phone, otp);
   }
 
+  async requestEmailOtp(email: string) {
+    await this.emailOtpService.issueOtp(email);
+    return { sent: true };
+  }
+
+  async verifyEmailOtp(email: string, otp: string) {
+    return this.emailOtpService.verifyOtp(email, otp);
+  }
+
   async registerPassword(username: string, password: string, role: UserRole, subjectId: string) {
     const hash = await bcrypt.hash(password, 10);
     await this.authRepository.createCredential(username, hash, role, subjectId);
@@ -102,5 +113,31 @@ export class AuthService {
       role: credential.role,
       subjectId: credential.subject_id,
     };
+  }
+
+  async getCredentialByUsername(username: string) {
+    return this.authRepository.getCredentialByUsername(username);
+  }
+
+  async updatePassword(username: string, newPassword: string) {
+    const hash = await bcrypt.hash(newPassword, 10);
+    await this.authRepository.updateCredentialPassword(username, hash);
+    return { ok: true };
+  }
+
+  async getOauthIdentity(provider: string, providerUserId: string) {
+    return this.authRepository.getOauthIdentity(provider, providerUserId);
+  }
+
+  async createOauthIdentity(params: {
+    id: string;
+    role: UserRole;
+    subjectId: string;
+    provider: string;
+    providerUserId: string;
+    email?: string | null;
+    displayName?: string | null;
+  }) {
+    await this.authRepository.createOauthIdentity(params);
   }
 }

@@ -294,6 +294,14 @@ export class VendorsRepository {
     }
   }
 
+  async updateVendorEmailIfMissing(vendorId: string, email: string) {
+    const pool = this.postgres.getPool();
+    await pool.query(
+      `UPDATE vendors SET email=$2 WHERE id=$1 AND (email IS NULL OR email='')`,
+      [vendorId, email],
+    );
+  }
+
   async upsertVendorDocument(params: {
     id: string;
     vendorId: string;

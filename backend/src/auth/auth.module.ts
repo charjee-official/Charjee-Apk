@@ -4,6 +4,8 @@ import { DatabaseModule } from '../database/database.module';
 import { AuthController } from './auth.controller';
 import { AuthRepository } from './auth.repository';
 import { AuthService } from './auth.service';
+import { EmailOtpService } from './email-otp.service';
+import { EmailService } from './email.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { OtpService } from './otp.service';
 import { SmsService } from './sms.service';
@@ -17,6 +19,8 @@ import { RolesGuard } from './roles.guard';
     JwtAuthGuard,
     RolesGuard,
     AuthRepository,
+    EmailOtpService,
+    EmailService,
     OtpService,
     SmsService,
   ],
